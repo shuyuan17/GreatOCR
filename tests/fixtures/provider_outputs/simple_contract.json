@@ -1,0 +1,42 @@
+{
+  "provider": {
+    "name": "fake",
+    "job_id": "fixture-job"
+  },
+  "document": {
+    "title": "Sample Contract",
+    "language": "en",
+    "pages": [
+      {
+        "page_number": 1,
+        "header": "Company Header",
+        "footer": "Page 1",
+        "blocks": [
+          {
+            "type": "title",
+            "text": "Sample Contract",
+            "bbox": [72, 80, 320, 110],
+            "confidence": 0.98
+          },
+          {
+            "type": "paragraph",
+            "text": "This agreement is made for testing.",
+            "bbox": [72, 130, 500, 160],
+            "confidence": 0.95
+          },
+          {
+            "type": "table",
+            "rows": [
+              ["Item", "Amount"],
+              ["Service", "100.00"]
+            ]
+          },
+          {
+            "type": "image",
+            "asset_id": "signature-1"
+          }
+        ]
+      }
+    ]
+  }
+}
