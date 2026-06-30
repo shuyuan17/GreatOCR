@@ -78,3 +78,21 @@ def test_unmodified_page_ids_survive_local_reparse() -> None:
     reparsed = [make_page_id(1), make_page_id(2), make_page_id(3)]
 
     assert reparsed == original
+
+
+def test_v1_page_loads_with_v2_defaults() -> None:
+    page = Page(
+        page_id="page-0001",
+        page_number=1,
+        width=842,
+        height=595,
+        rotation=270,
+        page_type="scanned",
+        blocks=[],
+    )
+
+    assert page.original_page_number == 1
+    assert page.task_page_number == 1
+    assert page.status == "succeeded"
+    assert page.effective_width == 595
+    assert page.effective_height == 842

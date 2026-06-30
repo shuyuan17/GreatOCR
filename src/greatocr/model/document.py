@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 BlockType = Literal[
@@ -16,6 +16,7 @@ BlockType = Literal[
     "page_number",
 ]
 PageType = Literal["native_text", "scanned", "mixed"]
+PageStatus = Literal["pending", "succeeded", "partial", "failed"]
 Severity = Literal["low", "medium", "high"]
 
 
@@ -80,15 +81,41 @@ class Block(BaseModel):
     source: str | None = None
 
 
+class ProviderTrace(BaseModel):
+    provider_name: str
+    model_name: str | None = None
+    attempt: int = 1
+    elapsed_ms: int | None = None
+
+
 class Page(BaseModel):
     page_id: str
     page_number: int
+    original_page_number: int | None = None
+    task_page_number: int | None = None
     width: float
     height: float
+    effective_width: float | None = None
+    effective_height: float | None = None
     rotation: int
     page_type: PageType
+    status: PageStatus = "succeeded"
+    provider_traces: list[ProviderTrace] = Field(default_factory=list)
     blocks: list[Block] = Field(default_factory=list)
     issues: list[Issue] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def fill_v2_defaults(self) -> "Page":
+        if self.original_page_number is None:
+            self.original_page_number = self.page_number
+        if self.task_page_number is None:
+            self.task_page_number = self.page_number
+        rotated = self.rotation % 180 != 0
+        if self.effective_width is None:
+            self.effective_width = self.height if rotated else self.width
+        if self.effective_height is None:
+            self.effective_height = self.width if rotated else self.height
+        return self
 
 
 class Document(BaseModel):
