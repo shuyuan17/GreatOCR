@@ -29,6 +29,7 @@ class TextSpan(BaseModel):
     confidence: float = 1.0
     language: str | None = None
     bbox: list[float] | None = None
+    source_bbox: list[float] | None = None
     is_critical: bool = False
     critical_type: str | None = None
     modifications: list[dict[str, str]] = Field(default_factory=list)
@@ -55,6 +56,7 @@ class Asset(BaseModel):
     path: str | None = None
     page_number: int
     bbox: list[float] | None = None
+    source_bbox: list[float] | None = None
     content_fingerprint: str | None = None
 
 
@@ -77,6 +79,7 @@ class Block(BaseModel):
     table: Table | None = None
     asset: Asset | None = None
     bbox: list[float] | None = None
+    source_bbox: list[float] | None = None
     confidence: float = 1.0
     source: str | None = None
 
