@@ -98,7 +98,7 @@ def run_quality_stage(
     preflight: PreflightResult,
     security_summary: DataFlowSummary,
 ) -> Document:
-    integrity_issues = run_integrity_checks(document, preflight)
+    integrity_issues = run_integrity_checks(document, preflight, task_dir=task_dir)
     all_issues = [*document.issues, *integrity_issues]
     updated = document.model_copy(update={"issues": all_issues}, deep=True)
     summary = compute_quality_summary(updated, all_issues)

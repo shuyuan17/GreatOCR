@@ -116,3 +116,50 @@ def test_missing_image_asset_generates_issue(tmp_path: Path) -> None:
 
     assert issues[0].issue_type == "asset_missing"
     assert issues[0].related_id == "asset-1"
+
+
+def test_integrity_checks_report_orientation_asset_and_word_join_risks(
+    tmp_path: Path,
+) -> None:
+    asset = Asset(
+        asset_id="missing-relative",
+        asset_type="image",
+        path="intermediates/assets/images/missing.png",
+        page_number=1,
+    )
+    page = Page(
+        page_id="page-0001",
+        page_number=1,
+        width=612,
+        height=792,
+        effective_width=792,
+        effective_height=612,
+        rotation=0,
+        page_type="scanned",
+        blocks=[
+            Block(
+                block_id="block-joined",
+                block_type="paragraph",
+                reading_order=1,
+                spans=[
+                    TextSpan(
+                        span_id="span-joined",
+                        original_text="Board\nresolution",
+                        current_text="Boardresolution",
+                    )
+                ],
+            )
+        ],
+    )
+
+    issues = run_integrity_checks(
+        make_document([page], assets=[asset]),
+        make_preflight(),
+        task_dir=tmp_path,
+    )
+
+    assert {issue.issue_type for issue in issues} >= {
+        "orientation_mismatch",
+        "asset_missing",
+        "possible_english_word_join",
+    }
