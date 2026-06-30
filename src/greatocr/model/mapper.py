@@ -98,6 +98,7 @@ def map_provider_result(raw_result: dict, preflight: PreflightResult) -> Documen
                     page_number=page_number,
                     bbox=bbox,
                     source_bbox=source_bbox,
+                    content_fingerprint=raw_block.get("content_fingerprint"),
                 )
                 assets.append(asset)
                 blocks.append(

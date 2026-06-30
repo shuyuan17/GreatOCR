@@ -110,6 +110,6 @@ def _write_rework_outputs(task_dir: Path, document: Document) -> None:
         encoding="utf-8",
     )
     (intermediates / "content.md").write_text(export_markdown(document), encoding="utf-8")
-    build_docx(document, task_dir / "result.docx")
+    build_docx(document, task_dir / "result.docx", task_dir=task_dir)
     summary = compute_quality_summary(document, document.issues)
     write_quality_docx(summary, document.issues, task_dir / "quality-report.docx")

@@ -20,7 +20,12 @@ class DocxBuildResult(BaseModel):
     issues: list[Issue]
 
 
-def build_docx(document: Document, output_path: Path) -> DocxBuildResult:
+def build_docx(
+    document: Document,
+    output_path: Path,
+    *,
+    task_dir: Path | None = None,
+) -> DocxBuildResult:
     word = WordDocument()
     configure_base_styles(word)
     issues: list[Issue] = []
@@ -48,7 +53,9 @@ def build_docx(document: Document, output_path: Path) -> DocxBuildResult:
         for block in sorted(page.blocks, key=lambda item: item.reading_order):
             if block.block_type in {"header", "footer"}:
                 continue
-            issues.extend(_add_block(word, block, page.page_number))
+            issues.extend(
+                _add_block(word, block, page.page_number, task_dir=task_dir)
+            )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     word.save(output_path)
@@ -89,7 +96,13 @@ def _block_text(block: Block) -> str:
     return "".join(span.current_text for span in block.spans)
 
 
-def _add_block(word, block: Block, page_number: int) -> list[Issue]:
+def _add_block(
+    word,
+    block: Block,
+    page_number: int,
+    *,
+    task_dir: Path | None = None,
+) -> list[Issue]:
     text = _block_text(block)
     if block.block_type == "title":
         word.add_heading(text, level=1)
@@ -100,5 +113,5 @@ def _add_block(word, block: Block, page_number: int) -> list[Issue]:
     elif block.block_type == "table":
         return add_table(word, block, page_number)
     elif block.block_type == "image" and block.asset:
-        return add_image_asset(word, block.asset, page_number)
+        return add_image_asset(word, block.asset, page_number, task_dir=task_dir)
     return []

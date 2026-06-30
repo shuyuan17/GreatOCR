@@ -54,6 +54,7 @@ def run_model_stage(
         raw_result = load_mineru_zip_result(
             result_zip_path,
             task_dir / "intermediates" / "assets",
+            task_dir=task_dir,
         )
     else:
         raw_result_path = parser_result.raw_result_dir / "result.json"
@@ -75,7 +76,7 @@ def run_model_stage(
 
 def run_docx_stage(task_dir: Path, document: Document) -> Document:
     output_path = task_dir / "result.docx"
-    build_result = build_docx(document, output_path)
+    build_result = build_docx(document, output_path, task_dir=task_dir)
     validation = validate_docx_package(output_path)
     updated = document.model_copy(
         update={"issues": [*document.issues, *build_result.issues, *validation.issues]},
