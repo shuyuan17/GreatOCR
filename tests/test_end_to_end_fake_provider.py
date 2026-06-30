@@ -10,6 +10,7 @@ from greatocr.ingest.preflight import run_preflight
 from greatocr.pipeline import run_pipeline
 from greatocr.providers.fake import FakeDocumentParser
 from greatocr.security import SecurityMode, build_data_flow_summary
+from greatocr.task.manifest import load_manifest
 
 
 FIXTURE = Path("tests/fixtures/provider_outputs/simple_contract.json")
@@ -66,3 +67,31 @@ def test_acceptance_script_runs_fake_provider() -> None:
 
     assert result.returncode == 0
     assert "fake provider acceptance passed" in result.stdout
+
+
+def test_selected_page_mapping_is_saved_and_restored_end_to_end(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "multi-page.pdf"
+    pdf = canvas.Canvas(str(pdf_path), pagesize=letter)
+    for index in range(1, 4):
+        pdf.drawString(72, 720, f"Page {index}")
+        pdf.showPage()
+    pdf.save()
+    preflight = run_preflight(pdf_path)
+    summary = build_data_flow_summary(
+        EngineConfig(provider=ProviderConfig(name="fake", public=False, last_approved=True)),
+        preflight,
+    )
+
+    document = run_pipeline(
+        tmp_path / "task",
+        preflight,
+        FakeDocumentParser(FIXTURE),
+        summary,
+        selected_pages=[2],
+    )
+    manifest = load_manifest(tmp_path / "task" / "intermediates" / "task-manifest.json")
+
+    assert manifest.config["selected_pages"] == [2]
+    assert manifest.config["task_to_original"] == {"1": 2}
+    assert document.pages[0].page_number == 2
+    assert document.pages[0].task_page_number == 1

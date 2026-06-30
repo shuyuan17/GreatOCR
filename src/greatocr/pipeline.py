@@ -16,6 +16,7 @@ from greatocr.providers.mineru_zip import load_mineru_zip_result
 from greatocr.reports.quality_docx import write_quality_docx
 from greatocr.reports.quality_json import write_quality_json
 from greatocr.security import DataFlowSummary
+from greatocr.selection.subset_pdf import write_subset_pdf
 from greatocr.task.checkpoints import load_or_create_manifest, mark_stage
 from greatocr.validation.checks import run_integrity_checks
 from greatocr.validation.quality import compute_quality_summary
@@ -30,6 +31,8 @@ def run_parse_stage(
     preflight: PreflightResult,
     parser: DocumentParser,
     security_summary: DataFlowSummary,
+    *,
+    selected_pages: list[int] | None = None,
 ) -> ParserJobResult:
     capabilities = parser.capabilities()
     if (
@@ -40,8 +43,29 @@ def run_parse_stage(
             f"Provider {security_summary.provider_name} is not approved for upload."
         )
 
+    source_pdf = preflight.source_path
+    subset = None
+    if selected_pages is not None:
+        subset = write_subset_pdf(
+            preflight.source_path,
+            selected_pages,
+            task_dir / "intermediates" / "selected-pages.pdf",
+        )
+        source_pdf = subset.path
+
     raw_result_dir = task_dir / "intermediates" / "provider-raw"
-    return parser.parse_document(preflight.source_path, raw_result_dir)
+    result = parser.parse_document(source_pdf, raw_result_dir)
+    if subset is None:
+        return result
+    return result.model_copy(
+        update={
+            "metadata": {
+                **result.metadata,
+                "task_to_original": subset.task_to_original,
+                "selected_pdf": "intermediates/selected-pages.pdf",
+            }
+        }
+    )
 
 
 def run_model_stage(
@@ -59,7 +83,24 @@ def run_model_stage(
     else:
         raw_result_path = parser_result.raw_result_dir / "result.json"
         raw_result = json.loads(raw_result_path.read_text(encoding="utf-8"))
+    page_mapping = _page_mapping(parser_result.metadata)
+    if page_mapping:
+        _restore_original_page_numbers(raw_result, page_mapping)
     document = detect_critical_fields(map_provider_result(raw_result, preflight))
+    if page_mapping:
+        task_by_original = {original: task for task, original in page_mapping.items()}
+        document = document.model_copy(
+            update={
+                "pages": [
+                    page.model_copy(
+                        update={"task_page_number": task_by_original[page.page_number]},
+                        deep=True,
+                    )
+                    for page in document.pages
+                ]
+            },
+            deep=True,
+        )
 
     intermediates_dir = task_dir / "intermediates"
     intermediates_dir.mkdir(parents=True, exist_ok=True)
@@ -123,12 +164,33 @@ def run_pipeline(
     security_summary: DataFlowSummary,
     *,
     resume: bool = False,
+    selected_pages: list[int] | None = None,
 ) -> Document:
+    task_to_original = (
+        {index: page for index, page in enumerate(selected_pages, start=1)}
+        if selected_pages is not None
+        else {}
+    )
     manifest = load_or_create_manifest(
         task_dir,
         preflight.file_sha256,
-        {"provider": security_summary.provider_name},
+        {
+            "provider": security_summary.provider_name,
+            **(
+                {
+                    "selected_pages": selected_pages,
+                    "task_to_original": task_to_original,
+                }
+                if selected_pages is not None
+                else {}
+            ),
+        },
     )
+    if selected_pages is None and isinstance(manifest.config.get("selected_pages"), list):
+        selected_pages = [int(page) for page in manifest.config["selected_pages"]]
+        task_to_original = _page_mapping(
+            {"task_to_original": manifest.config.get("task_to_original", {})}
+        )
 
     try:
         raw_result_dir = task_dir / "intermediates" / "provider-raw"
@@ -140,17 +202,23 @@ def run_pipeline(
             parser_result = ParserJobResult(
                 provider_name=security_summary.provider_name,
                 raw_result_dir=raw_result_dir,
-                metadata={},
+                metadata={"task_to_original": task_to_original},
             )
         elif parse_done and (raw_result_dir / "result.json").exists():
             parser_result = ParserJobResult(
                 provider_name=security_summary.provider_name,
                 raw_result_dir=raw_result_dir,
-                metadata={},
+                metadata={"task_to_original": task_to_original},
             )
         else:
             manifest = mark_stage(task_dir, manifest, "parse", "running")
-            parser_result = run_parse_stage(task_dir, preflight, parser, security_summary)
+            parser_result = run_parse_stage(
+                task_dir,
+                preflight,
+                parser,
+                security_summary,
+                selected_pages=selected_pages,
+            )
             manifest = mark_stage(
                 task_dir,
                 manifest,
@@ -190,7 +258,13 @@ def run_pipeline(
         quality_done = resume and manifest.stages.get("quality", None) and manifest.stages["quality"].status == "succeeded"
         if not (quality_done and (task_dir / "quality-report.docx").exists()):
             manifest = mark_stage(task_dir, manifest, "quality", "running")
-            document = run_quality_stage(task_dir, document, preflight, security_summary)
+            quality_preflight = _selected_preflight(preflight, selected_pages)
+            document = run_quality_stage(
+                task_dir,
+                document,
+                quality_preflight,
+                security_summary,
+            )
             mark_stage(
                 task_dir,
                 manifest,
@@ -206,3 +280,30 @@ def run_pipeline(
     except Exception as exc:
         mark_stage(task_dir, manifest, "pipeline", "failed", message=type(exc).__name__)
         raise
+
+
+def _page_mapping(metadata: dict[str, object]) -> dict[int, int]:
+    value = metadata.get("task_to_original")
+    if not isinstance(value, dict):
+        return {}
+    return {int(task): int(original) for task, original in value.items()}
+
+
+def _restore_original_page_numbers(raw_result: dict, mapping: dict[int, int]) -> None:
+    for page in raw_result.get("document", {}).get("pages", []):
+        task_page = int(page.get("page_number", 0))
+        if task_page in mapping:
+            page["page_number"] = mapping[task_page]
+
+
+def _selected_preflight(
+    preflight: PreflightResult,
+    selected_pages: list[int] | None,
+) -> PreflightResult:
+    if selected_pages is None:
+        return preflight
+    selected = set(selected_pages)
+    return preflight.model_copy(
+        update={"pages": [page for page in preflight.pages if page.page_number in selected]},
+        deep=True,
+    )
