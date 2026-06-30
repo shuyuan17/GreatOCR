@@ -78,7 +78,7 @@ def test_title_and_paragraph_are_readable_with_python_docx(tmp_path: Path) -> No
     ]
 
 
-def test_multi_page_document_inserts_page_break_and_pagination_issue(tmp_path: Path) -> None:
+def test_multi_page_document_uses_sections_and_reports_pagination_risk(tmp_path: Path) -> None:
     document = make_document(
         [
             Page(
@@ -104,8 +104,8 @@ def test_multi_page_document_inserts_page_break_and_pagination_issue(tmp_path: P
 
     result = build_docx(document, tmp_path / "result.docx")
 
-    xml = ZipFile(result.output_path).read("word/document.xml").decode("utf-8")
-    assert 'w:type="page"' in xml
+    reopened = DocxDocument(result.output_path)
+    assert len(reopened.sections) == 2
     assert result.issues[0].issue_type == "pagination_may_drift"
 
 
@@ -129,3 +129,45 @@ def test_page_size_is_written_to_section(tmp_path: Path) -> None:
 
     assert section.page_width == Pt(612)
     assert section.page_height == Pt(792)
+
+
+def test_rotated_source_generates_portrait_section(tmp_path: Path) -> None:
+    page = Page(
+        page_id="page-0001",
+        page_number=1,
+        width=842,
+        height=595,
+        rotation=270,
+        page_type="scanned",
+        blocks=[text_block("paragraph", 1, "Portrait page")],
+    )
+
+    result = build_docx(make_document([page]), tmp_path / "portrait.docx")
+    section = DocxDocument(result.output_path).sections[0]
+
+    assert section.page_height > section.page_width
+    assert section.page_width == Pt(595)
+    assert section.page_height == Pt(842)
+
+
+def test_header_and_footer_use_word_parts(tmp_path: Path) -> None:
+    page = Page(
+        page_id="page-0001",
+        page_number=1,
+        width=612,
+        height=792,
+        rotation=0,
+        page_type="native_text",
+        blocks=[
+            text_block("header", 1, "Company Header"),
+            text_block("paragraph", 2, "Body text"),
+            text_block("footer", 3, "Page Footer"),
+        ],
+    )
+
+    result = build_docx(make_document([page]), tmp_path / "header-footer.docx")
+    reopened = DocxDocument(result.output_path)
+
+    assert any("Company Header" in p.text for p in reopened.sections[0].header.paragraphs)
+    assert any("Page Footer" in p.text for p in reopened.sections[0].footer.paragraphs)
+    assert [p.text for p in reopened.paragraphs] == ["Body text"]

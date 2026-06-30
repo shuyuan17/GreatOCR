@@ -70,23 +70,38 @@ def test_load_mineru_zip_result_normalizes_content_list(tmp_path: Path) -> None:
     zip_path = tmp_path / "result.zip"
     make_zip(zip_path)
 
-    raw = load_mineru_zip_result(zip_path, tmp_path / "assets")
+    task_dir = tmp_path / "task"
+    assets_dir = task_dir / "intermediates" / "assets"
+    raw = load_mineru_zip_result(zip_path, assets_dir, task_dir=task_dir)
 
     assert raw["provider"]["name"] == "mineru"
     assert raw["document"]["pages"][0]["blocks"][0]["type"] == "title"
     assert raw["document"]["pages"][0]["blocks"][1]["type"] == "paragraph"
     assert raw["document"]["pages"][0]["blocks"][2]["type"] == "image"
     assert raw["document"]["pages"][1]["blocks"][0]["rows"][1] == ["A", "100"]
-    assert (tmp_path / "assets" / "images" / "signature.jpg").is_file()
+    image = raw["document"]["pages"][0]["blocks"][2]
+    assert image["path"] == "intermediates/assets/images/signature.jpg"
+    assert len(image["content_fingerprint"]) == 64
+    assert str(tmp_path) not in image["path"]
+    assert (assets_dir / "images" / "signature.jpg").is_file()
 
 
 def test_mineru_zip_result_maps_to_unified_document(tmp_path: Path) -> None:
     zip_path = tmp_path / "result.zip"
     make_zip(zip_path)
 
-    document = map_provider_result(load_mineru_zip_result(zip_path, tmp_path / "assets"), make_preflight())
+    task_dir = tmp_path / "task"
+    document = map_provider_result(
+        load_mineru_zip_result(
+            zip_path,
+            task_dir / "intermediates" / "assets",
+            task_dir=task_dir,
+        ),
+        make_preflight(),
+    )
 
     assert document.provider_name == "mineru"
     assert document.pages[0].blocks[0].block_type == "title"
     assert document.pages[0].blocks[2].asset.path.endswith("signature.jpg")
+    assert document.pages[0].blocks[2].asset.content_fingerprint
     assert document.pages[1].blocks[0].table.rows[1][1].text == "100"

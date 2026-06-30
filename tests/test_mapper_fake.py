@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from greatocr.ingest.preflight import PagePreflight, PreflightResult
 from greatocr.model.mapper import map_provider_result
 
@@ -45,7 +47,11 @@ def test_mapper_preserves_coordinates_confidence_and_provider_metadata() -> None
     title = document.pages[0].blocks[1]
 
     assert document.provider_name == "fake"
-    assert title.bbox == [72, 80, 320, 110]
+    assert title.bbox == pytest.approx(
+        [72 / 612, 80 / 792, 320 / 612, 110 / 792]
+    )
+    assert title.source_bbox == [72, 80, 320, 110]
+    assert title.spans[0].bbox == pytest.approx(title.bbox)
     assert title.confidence == 0.98
     assert title.source == "fake"
 

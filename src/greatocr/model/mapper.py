@@ -12,6 +12,9 @@ from greatocr.model.document import (
     TextSpan,
 )
 from greatocr.model.ids import make_block_id, make_page_id, make_span_id, make_table_id
+from greatocr.model.geometry import normalize_bbox
+from greatocr.model.layout import order_blocks
+from greatocr.model.text_cleanup import normalize_text
 
 
 _TEXT_BLOCK_TYPES = {"title", "paragraph", "list"}
@@ -45,6 +48,16 @@ def map_provider_result(raw_result: dict, preflight: PreflightResult) -> Documen
 
         for raw_block in raw_page.get("blocks", []):
             block_type = raw_block.get("type")
+            source_bbox = raw_block.get("bbox")
+            bbox = (
+                normalize_bbox(
+                    source_bbox,
+                    preflight_page.width,
+                    preflight_page.height,
+                )
+                if preflight_page
+                else source_bbox
+            )
             if block_type in _TEXT_BLOCK_TYPES:
                 blocks.append(
                     _text_block(
@@ -53,7 +66,8 @@ def map_provider_result(raw_result: dict, preflight: PreflightResult) -> Documen
                         reading_order,
                         raw_block.get("text", ""),
                         provider_name,
-                        bbox=raw_block.get("bbox"),
+                        bbox=bbox,
+                        source_bbox=source_bbox,
                         confidence=float(raw_block.get("confidence", 1.0)),
                     )
                 )
@@ -72,7 +86,8 @@ def map_provider_result(raw_result: dict, preflight: PreflightResult) -> Documen
                         block_type="table",
                         reading_order=reading_order,
                         table=table,
-                        bbox=raw_block.get("bbox"),
+                        bbox=bbox,
+                        source_bbox=source_bbox,
                         confidence=table.confidence,
                         source=provider_name,
                     )
@@ -83,7 +98,9 @@ def map_provider_result(raw_result: dict, preflight: PreflightResult) -> Documen
                     asset_type="image",
                     path=raw_block.get("path"),
                     page_number=page_number,
-                    bbox=raw_block.get("bbox"),
+                    bbox=bbox,
+                    source_bbox=source_bbox,
+                    content_fingerprint=raw_block.get("content_fingerprint"),
                 )
                 assets.append(asset)
                 blocks.append(
@@ -92,7 +109,8 @@ def map_provider_result(raw_result: dict, preflight: PreflightResult) -> Documen
                         block_type="image",
                         reading_order=reading_order,
                         asset=asset,
-                        bbox=raw_block.get("bbox"),
+                        bbox=bbox,
+                        source_bbox=source_bbox,
                         confidence=float(raw_block.get("confidence", 1.0)),
                         source=provider_name,
                     )
@@ -128,7 +146,7 @@ def map_provider_result(raw_result: dict, preflight: PreflightResult) -> Documen
                 height=preflight_page.height if preflight_page else 0,
                 rotation=preflight_page.rotation if preflight_page else 0,
                 page_type=preflight_page.page_type if preflight_page else "scanned",
-                blocks=blocks,
+                blocks=_order_page_blocks(blocks),
             )
         )
 
@@ -152,6 +170,7 @@ def _text_block(
     provider_name: str,
     *,
     bbox: list[float] | None = None,
+    source_bbox: list[float] | None = None,
     confidence: float = 1.0,
 ) -> Block:
     return Block(
@@ -162,12 +181,25 @@ def _text_block(
             TextSpan(
                 span_id=make_span_id(page_number, reading_order, 1),
                 original_text=text,
-                current_text=text,
+                current_text=normalize_text(text),
                 confidence=confidence,
                 bbox=bbox,
+                source_bbox=source_bbox,
             )
         ],
         bbox=bbox,
+        source_bbox=source_bbox,
         confidence=confidence,
         source=provider_name,
     )
+
+
+def _order_page_blocks(blocks: list[Block]) -> list[Block]:
+    headers = [block for block in blocks if block.block_type == "header"]
+    footers = [block for block in blocks if block.block_type == "footer"]
+    body = [block for block in blocks if block.block_type not in {"header", "footer"}]
+    ordered = [*headers, *order_blocks(body), *footers]
+    return [
+        block.model_copy(update={"reading_order": index}, deep=True)
+        for index, block in enumerate(ordered, start=1)
+    ]

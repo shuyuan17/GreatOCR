@@ -1,24 +1,30 @@
 from __future__ import annotations
 
 import json
-import shutil
+import hashlib
 from html.parser import HTMLParser
 from pathlib import Path
 from zipfile import ZipFile
 
 
-def load_mineru_zip_result(zip_path: Path, assets_dir: Path) -> dict:
+def load_mineru_zip_result(
+    zip_path: Path,
+    assets_dir: Path,
+    *,
+    task_dir: Path | None = None,
+) -> dict:
+    task_dir = task_dir or assets_dir
     with ZipFile(zip_path) as zf:
         content_name = _find_content_list(zf.namelist())
         content_list = json.loads(zf.read(content_name).decode("utf-8"))
-        _extract_images(zf, assets_dir)
+        fingerprints = _extract_images(zf, assets_dir)
 
     pages: dict[int, list[dict]] = {}
     for item in content_list:
         if not isinstance(item, dict):
             continue
         page_number = int(item.get("page_idx", 0)) + 1
-        block = _normalize_item(item, assets_dir)
+        block = _normalize_item(item, assets_dir, task_dir, fingerprints)
         if block:
             pages.setdefault(page_number, []).append(block)
 
@@ -44,18 +50,31 @@ def _find_content_list(names: list[str]) -> str:
     return candidates[0]
 
 
-def _extract_images(zf: ZipFile, assets_dir: Path) -> None:
+def _extract_images(zf: ZipFile, assets_dir: Path) -> dict[str, str]:
+    fingerprints: dict[str, str] = {}
     assets_dir.mkdir(parents=True, exist_ok=True)
+    assets_root = assets_dir.resolve()
     for name in zf.namelist():
         if not name.startswith("images/") or name.endswith("/"):
             continue
-        target = assets_dir / name
+        target = (assets_root / name).resolve()
+        try:
+            target.relative_to(assets_root)
+        except ValueError:
+            continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        with zf.open(name) as source, target.open("wb") as destination:
-            shutil.copyfileobj(source, destination)
+        content = zf.read(name)
+        target.write_bytes(content)
+        fingerprints[name] = hashlib.sha256(content).hexdigest()
+    return fingerprints
 
 
-def _normalize_item(item: dict, assets_dir: Path) -> dict | None:
+def _normalize_item(
+    item: dict,
+    assets_dir: Path,
+    task_dir: Path,
+    fingerprints: dict[str, str],
+) -> dict | None:
     item_type = item.get("type")
     bbox = item.get("bbox")
     if item_type == "text":
@@ -70,10 +89,16 @@ def _normalize_item(item: dict, assets_dir: Path) -> dict | None:
         return {"type": "page_number", "text": item.get("text", ""), "bbox": bbox}
     if item_type == "image":
         image_path = item.get("img_path") or item.get("image_path")
+        extracted_path = assets_dir / image_path if image_path else None
         return {
             "type": "image",
             "asset_id": Path(image_path or "image").stem,
-            "path": str(assets_dir / image_path) if image_path else None,
+            "path": (
+                extracted_path.relative_to(task_dir).as_posix()
+                if extracted_path and extracted_path.is_relative_to(task_dir)
+                else None
+            ),
+            "content_fingerprint": fingerprints.get(image_path or ""),
             "bbox": bbox,
         }
     if item_type == "table":

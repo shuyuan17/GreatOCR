@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from greatocr.ingest.preflight import PreflightResult
 from greatocr.model.document import Document, Issue
+from greatocr.model.geometry import effective_page_size
+from greatocr.model.text_cleanup import normalize_text
 
 
-def run_integrity_checks(document: Document, preflight: PreflightResult) -> list[Issue]:
+def run_integrity_checks(
+    document: Document,
+    preflight: PreflightResult,
+    *,
+    task_dir: Path | None = None,
+) -> list[Issue]:
     issues: list[Issue] = []
     issue_index = 1
 
@@ -26,6 +34,31 @@ def run_integrity_checks(document: Document, preflight: PreflightResult) -> list
             issue_index += 1
 
     for page in document.pages:
+        preflight_page = next(
+            (item for item in preflight.pages if item.page_number == page.page_number),
+            None,
+        )
+        if preflight_page:
+            expected_width, expected_height = effective_page_size(
+                preflight_page.width,
+                preflight_page.height,
+                preflight_page.rotation,
+            )
+            expected_landscape = expected_width > expected_height
+            actual_landscape = page.effective_width > page.effective_height
+            if expected_landscape != actual_landscape:
+                issues.append(
+                    Issue(
+                        issue_id=f"issue-integrity-{issue_index:04d}",
+                        page_number=page.page_number,
+                        issue_type="orientation_mismatch",
+                        severity="high",
+                        message="Output page orientation differs from the source page.",
+                        suggestion="Rebuild this page using its normalized effective dimensions.",
+                    )
+                )
+                issue_index += 1
+
         for block in page.blocks:
             for span in block.spans:
                 if (
@@ -46,9 +79,27 @@ def run_integrity_checks(document: Document, preflight: PreflightResult) -> list
                         )
                     )
                     issue_index += 1
+                if (
+                    re.search(r"[A-Za-z0-9]\r?\n[A-Za-z0-9]", span.original_text)
+                    and normalize_text(span.original_text) != span.current_text
+                ):
+                    issues.append(
+                        Issue(
+                            issue_id=f"issue-integrity-{issue_index:04d}",
+                            page_number=page.page_number,
+                            issue_type="possible_english_word_join",
+                            severity="low",
+                            message="An OCR line boundary may have joined English words.",
+                            related_id=span.span_id,
+                            snippet=span.current_text,
+                            suggestion="Review spacing near the original OCR line break.",
+                        )
+                    )
+                    issue_index += 1
 
     for asset in document.assets:
-        if asset.path and not Path(asset.path).exists():
+        asset_path = _asset_path(asset.path, task_dir)
+        if asset.path and (asset_path is None or not asset_path.exists()):
             issues.append(
                 Issue(
                     issue_id=f"issue-integrity-{issue_index:04d}",
@@ -63,3 +114,18 @@ def run_integrity_checks(document: Document, preflight: PreflightResult) -> list
             issue_index += 1
 
     return issues
+
+
+def _asset_path(path: str | None, task_dir: Path | None) -> Path | None:
+    if not path:
+        return None
+    candidate = Path(path)
+    if task_dir is None:
+        return candidate
+    root = task_dir.resolve()
+    resolved = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        return None
+    return resolved
