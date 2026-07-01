@@ -76,6 +76,7 @@ def test_docx_stage_writes_result_docx(tmp_path: Path) -> None:
     updated = run_docx_stage(tmp_path / "task", document)
 
     assert (tmp_path / "task" / "result.docx").is_file()
+    assert (tmp_path / "task" / "result-v1.docx").is_file()
     assert updated.document_id == document.document_id
 
 

@@ -89,6 +89,7 @@ def make_task(task_dir: Path) -> None:
                 height=792,
                 rotation=0,
                 page_type="native_text",
+                status="failed",
                 blocks=[
                     Block(
                         block_id="block-p0005-paragraph-0001",
@@ -129,6 +130,7 @@ def test_page_rework_preserves_unaffected_page_block_ids(tmp_path: Path) -> None
     updated = rework_pages(task_dir, [5], PageReworkParser())
 
     assert updated.pages[0].blocks[0].block_id == "block-p0001-paragraph-0001"
+    assert updated.pages[1].status == "succeeded"
 
 
 def test_page_rework_regenerates_outputs(tmp_path: Path) -> None:
@@ -139,6 +141,7 @@ def test_page_rework_regenerates_outputs(tmp_path: Path) -> None:
 
     assert (task_dir / "intermediates" / "document.json").is_file()
     assert (task_dir / "result.docx").is_file()
+    assert (task_dir / "result-v1.docx").is_file()
     assert (task_dir / "quality-report.docx").is_file()
 
 

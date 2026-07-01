@@ -19,6 +19,7 @@ from greatocr.reports.quality_json import write_quality_json
 from greatocr.security import DataFlowSummary
 from greatocr.selection.subset_pdf import write_subset_pdf
 from greatocr.task.checkpoints import load_or_create_manifest, mark_stage
+from greatocr.task.versions import publish_result_version
 from greatocr.validation.checks import run_integrity_checks
 from greatocr.validation.quality import compute_quality_summary
 
@@ -117,9 +118,14 @@ def run_model_stage(
 
 
 def run_docx_stage(task_dir: Path, document: Document) -> Document:
-    output_path = task_dir / "result.docx"
-    build_result = build_docx(document, output_path, task_dir=task_dir)
-    validation = validate_docx_package(output_path)
+    generated_path = task_dir / "intermediates" / "generated-result.docx"
+    build_result = build_docx(document, generated_path, task_dir=task_dir)
+    validation = validate_docx_package(generated_path)
+    if not validation.valid:
+        generated_path.unlink(missing_ok=True)
+        raise RuntimeError("generated DOCX failed package validation")
+    publish_result_version(task_dir, generated_path)
+    generated_path.unlink(missing_ok=True)
     updated = document.model_copy(
         update={"issues": [*document.issues, *build_result.issues, *validation.issues]},
         deep=True,

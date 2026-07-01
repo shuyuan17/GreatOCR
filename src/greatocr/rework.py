@@ -3,16 +3,22 @@ from __future__ import annotations
 from pathlib import Path
 
 from greatocr.docx.builder import build_docx
+from greatocr.docx.validate_docx import validate_docx_package
 from greatocr.ingest.preflight import PagePreflight, PreflightResult
 from greatocr.model.document import Block, Document, Page
 from greatocr.model.mapper import map_provider_result
 from greatocr.model.markdown_export import export_markdown
 from greatocr.reports.quality_docx import write_quality_docx
+from greatocr.task.versions import publish_result_version
 from greatocr.validation.quality import compute_quality_summary
 
 
 class ReworkTargetNotFound(ValueError):
     """Raised when a requested rework page/table cannot be found."""
+
+
+class ReworkOutputInvalid(RuntimeError):
+    """Raised when a regenerated DOCX fails package validation."""
 
 
 def rework_pages(task_dir: Path, pages: list[int], parser) -> Document:
@@ -105,11 +111,18 @@ def _find_tables(document: Document) -> dict[str, tuple[Page, Block]]:
 def _write_rework_outputs(task_dir: Path, document: Document) -> None:
     intermediates = task_dir / "intermediates"
     intermediates.mkdir(parents=True, exist_ok=True)
+    generated = intermediates / "rework-result.docx"
+    build_docx(document, generated, task_dir=task_dir)
+    validation = validate_docx_package(generated)
+    if not validation.valid:
+        raise ReworkOutputInvalid("regenerated DOCX failed package validation")
+
     (intermediates / "document.json").write_text(
         document.model_dump_json(indent=2),
         encoding="utf-8",
     )
     (intermediates / "content.md").write_text(export_markdown(document), encoding="utf-8")
-    build_docx(document, task_dir / "result.docx", task_dir=task_dir)
+    publish_result_version(task_dir, generated)
+    generated.unlink(missing_ok=True)
     summary = compute_quality_summary(document, document.issues)
     write_quality_docx(summary, document.issues, task_dir / "quality-report.docx")
