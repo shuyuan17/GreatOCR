@@ -8,12 +8,15 @@ version = "0.1.0"
 description = "GreatOCR V1 MVP document reconstruction engine."
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi>=0.115,<0.116",
     "httpx>=0.28",
+    "keyring>=25.6",
     "pydantic>=2.8",
     "python-docx>=1.1",
     "pypdf>=5.0",
     "PyMuPDF>=1.24",
     "Pillow>=10.4",
+    "uvicorn>=0.34",
 ]
 
 [project.optional-dependencies]
