@@ -109,3 +109,52 @@ def test_resume_does_not_repeat_succeeded_parse_stage(tmp_path: Path) -> None:
     run_pipeline(task_dir, preflight, FailingParser(FIXTURE), make_summary(preflight), resume=True)
 
     assert (task_dir / "quality-report.docx").is_file()
+
+
+def test_resume_recovers_selected_page_mapping_from_manifest(tmp_path: Path) -> None:
+    preflight = make_preflight(tmp_path).model_copy(
+        update={
+            "page_count": 2,
+            "pages": [
+                PagePreflight(
+                    page_number=index,
+                    width=612,
+                    height=792,
+                    rotation=0,
+                    page_type="native_text",
+                )
+                for index in (1, 2)
+            ],
+        },
+        deep=True,
+    )
+    task_dir = tmp_path / "task"
+    raw_dir = task_dir / "intermediates" / "provider-raw"
+    raw_dir.mkdir(parents=True)
+    (raw_dir / "result.json").write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    (task_dir / "intermediates" / "task-manifest.json").write_text(
+        json.dumps(
+            {
+                "source_fingerprint": "a" * 64,
+                "config": {
+                    "provider": "fake",
+                    "selected_pages": [2],
+                    "task_to_original": {"1": 2},
+                },
+                "stages": {"parse": {"status": "succeeded"}},
+                "outputs": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    document = run_pipeline(
+        task_dir,
+        preflight,
+        FailingParser(FIXTURE),
+        make_summary(preflight),
+        resume=True,
+    )
+
+    assert document.pages[0].page_number == 2
+    assert document.pages[0].task_page_number == 1

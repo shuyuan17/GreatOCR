@@ -50,7 +50,9 @@ def map_provider_result(raw_result: dict, preflight: PreflightResult) -> Documen
             block_type = raw_block.get("type")
             source_bbox = raw_block.get("bbox")
             bbox = (
-                normalize_bbox(
+                source_bbox
+                if raw_block.get("bbox_unit") == "normalized"
+                else normalize_bbox(
                     source_bbox,
                     preflight_page.width,
                     preflight_page.height,

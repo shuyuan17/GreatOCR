@@ -3,16 +3,23 @@ from __future__ import annotations
 from pathlib import Path
 
 from greatocr.docx.builder import build_docx
+from greatocr.docx.validate_docx import validate_docx_package
 from greatocr.ingest.preflight import PagePreflight, PreflightResult
 from greatocr.model.document import Block, Document, Page
 from greatocr.model.mapper import map_provider_result
 from greatocr.model.markdown_export import export_markdown
 from greatocr.reports.quality_docx import write_quality_docx
+from greatocr.selection.subset_pdf import write_subset_pdf
+from greatocr.task.versions import publish_result_version
 from greatocr.validation.quality import compute_quality_summary
 
 
 class ReworkTargetNotFound(ValueError):
     """Raised when a requested rework page/table cannot be found."""
+
+
+class ReworkOutputInvalid(RuntimeError):
+    """Raised when a regenerated DOCX fails package validation."""
 
 
 def rework_pages(task_dir: Path, pages: list[int], parser) -> Document:
@@ -68,10 +75,20 @@ def _parse_pages(task_dir: Path, document: Document, pages: list[int], parser) -
     source_pdf = task_dir / document.source_file_name
     if hasattr(parser, "parse_pages"):
         return parser.parse_pages(source_pdf, raw_result_dir, pages)
-    result = parser.parse_document(source_pdf, raw_result_dir)
     import json
 
-    return json.loads((result.raw_result_dir / "result.json").read_text(encoding="utf-8"))
+    subset = write_subset_pdf(
+        source_pdf,
+        pages,
+        task_dir / "intermediates" / "rework-selected-pages.pdf",
+    )
+    result = parser.parse_document(subset.path, raw_result_dir)
+    raw = json.loads((result.raw_result_dir / "result.json").read_text(encoding="utf-8"))
+    for raw_page in raw.get("document", {}).get("pages", []):
+        task_page = int(raw_page.get("page_number", 0))
+        if task_page in subset.task_to_original:
+            raw_page["page_number"] = subset.task_to_original[task_page]
+    return raw
 
 
 def _preflight_from_document(document: Document) -> PreflightResult:
@@ -105,11 +122,18 @@ def _find_tables(document: Document) -> dict[str, tuple[Page, Block]]:
 def _write_rework_outputs(task_dir: Path, document: Document) -> None:
     intermediates = task_dir / "intermediates"
     intermediates.mkdir(parents=True, exist_ok=True)
+    generated = intermediates / "rework-result.docx"
+    build_docx(document, generated, task_dir=task_dir)
+    validation = validate_docx_package(generated)
+    if not validation.valid:
+        raise ReworkOutputInvalid("regenerated DOCX failed package validation")
+
     (intermediates / "document.json").write_text(
         document.model_dump_json(indent=2),
         encoding="utf-8",
     )
     (intermediates / "content.md").write_text(export_markdown(document), encoding="utf-8")
-    build_docx(document, task_dir / "result.docx", task_dir=task_dir)
+    publish_result_version(task_dir, generated)
+    generated.unlink(missing_ok=True)
     summary = compute_quality_summary(document, document.issues)
     write_quality_docx(summary, document.issues, task_dir / "quality-report.docx")

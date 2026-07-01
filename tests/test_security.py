@@ -2,7 +2,7 @@ from pathlib import Path
 
 from greatocr.config import EngineConfig, ProviderConfig
 from greatocr.ingest.preflight import PreflightResult
-from greatocr.security import SecurityMode, build_data_flow_summary
+from greatocr.security import SecurityMode, approve_data_flow, build_data_flow_summary
 
 
 def make_preflight() -> PreflightResult:
@@ -67,3 +67,18 @@ def test_data_flow_summary_never_contains_api_key() -> None:
     summary = build_data_flow_summary(config, make_preflight())
 
     assert "secret-key" not in summary.model_dump_json()
+
+
+def test_sensitive_confirmation_records_only_approved_profile_ids() -> None:
+    config = EngineConfig(
+        security_mode=SecurityMode.SENSITIVE,
+        provider=ProviderConfig(name="mineru", public=True, last_approved=True),
+    )
+    summary = build_data_flow_summary(config, make_preflight())
+
+    approved = approve_data_flow(summary, ["mineru-default", "private-backup"])
+
+    assert approved.external_upload_allowed is True
+    assert approved.requires_confirmation is False
+    assert approved.approved_profile_ids == ["mineru-default", "private-backup"]
+    assert approved.confirmed_at is not None

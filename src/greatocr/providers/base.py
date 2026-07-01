@@ -16,6 +16,9 @@ class ProviderCapabilities(BaseModel):
     formulas: bool
     languages: list[str]
     data_residency: str = "provider-defined"
+    text: bool = True
+    layout: bool = False
+    images: bool = False
 
 
 class ParserJobResult(BaseModel):
@@ -23,7 +26,7 @@ class ParserJobResult(BaseModel):
 
     provider_name: str
     raw_result_dir: Path
-    metadata: dict[str, str]
+    metadata: dict[str, object]
 
 
 class DocumentParser(ABC):
@@ -34,4 +37,3 @@ class DocumentParser(ABC):
     @abstractmethod
     def parse_document(self, source_pdf: Path, raw_result_dir: Path) -> ParserJobResult:
         """Parse a PDF into provider-native raw results."""
-
