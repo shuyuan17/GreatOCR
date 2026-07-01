@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
-from greatocr.app.schemas import NewTask, TaskRecord
+from greatocr.app.schemas import NewTask, TaskRecord, TaskStatus
 
 
 SCHEMA_VERSION = 1
@@ -84,6 +84,15 @@ class TaskDatabase:
             ).fetchone()
         return self._task_from_row(row) if row is not None else None
 
+    def update_task_status(self, task_id: str, status: TaskStatus) -> None:
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                "UPDATE tasks SET status = ? WHERE task_id = ?",
+                (status, task_id),
+            )
+        if cursor.rowcount != 1:
+            raise KeyError(task_id)
+
     def save_provider(self, profile: Mapping[str, Any] | BaseModel) -> None:
         payload = profile.model_dump() if isinstance(profile, BaseModel) else dict(profile)
         with self._lock, self._connection:
@@ -111,6 +120,40 @@ class TaskDatabase:
                     json.dumps(payload.get("approved_fallback_ids", [])),
                 ),
             )
+
+    def get_provider(self, profile_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM provider_profiles WHERE profile_id = ?",
+                (profile_id,),
+            ).fetchone()
+        return self._provider_from_row(row) if row is not None else None
+
+    def list_providers(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT * FROM provider_profiles ORDER BY display_name, profile_id"
+            ).fetchall()
+        return [self._provider_from_row(row) for row in rows]
+
+    def delete_provider(self, profile_id: str) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "DELETE FROM provider_profiles WHERE profile_id = ?",
+                (profile_id,),
+            )
+
+    def provider_in_use(self, profile_id: str) -> bool:
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT 1 FROM tasks
+                WHERE provider_profile_id = ? AND status = 'running'
+                LIMIT 1
+                """,
+                (profile_id,),
+            ).fetchone()
+        return row is not None
 
     def provider_columns(self) -> list[str]:
         with self._lock:
@@ -185,3 +228,15 @@ class TaskDatabase:
             quality_rating=row["quality_rating"],
             created_at=row["created_at"],
         )
+
+    @staticmethod
+    def _provider_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "profile_id": row["profile_id"],
+            "display_name": row["display_name"],
+            "adapter_type": row["adapter_type"],
+            "endpoint": row["endpoint"],
+            "public": bool(row["public"]),
+            "capabilities": json.loads(row["capabilities"]),
+            "approved_fallback_ids": json.loads(row["approved_fallback_ids"]),
+        }

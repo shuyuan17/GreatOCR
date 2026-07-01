@@ -5,9 +5,11 @@ from ipaddress import ip_address
 from fastapi import APIRouter, Depends, FastAPI
 
 from greatocr.app.auth import require_local_session
+from greatocr.app.routes.providers import router as providers_router
 
 
 api_router = APIRouter()
+api_router.include_router(providers_router)
 
 
 @api_router.get("/health")
@@ -15,7 +17,14 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def create_app(session_token: str, allowed_origin: str) -> FastAPI:
+def create_app(
+    session_token: str,
+    allowed_origin: str,
+    *,
+    database=None,
+    credential_service=None,
+    provider_connection_tester=None,
+) -> FastAPI:
     if not session_token:
         raise ValueError("session token cannot be empty")
     if not allowed_origin:
@@ -24,6 +33,9 @@ def create_app(session_token: str, allowed_origin: str) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.session_token = session_token
     app.state.allowed_origin = allowed_origin.rstrip("/")
+    app.state.database = database
+    app.state.credential_service = credential_service
+    app.state.provider_connection_tester = provider_connection_tester
     app.include_router(
         api_router,
         prefix="/api",
