@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, FastAPI
 
 from greatocr.app.auth import require_local_session
 from greatocr.app.routes.providers import router as providers_router
+from greatocr.app.routes.tasks import router as tasks_router
 
 
 api_router = APIRouter()
 api_router.include_router(providers_router)
+api_router.include_router(tasks_router)
 
 
 @api_router.get("/health")
@@ -24,6 +26,7 @@ def create_app(
     database=None,
     credential_service=None,
     provider_connection_tester=None,
+    task_service=None,
 ) -> FastAPI:
     if not session_token:
         raise ValueError("session token cannot be empty")
@@ -36,6 +39,7 @@ def create_app(
     app.state.database = database
     app.state.credential_service = credential_service
     app.state.provider_connection_tester = provider_connection_tester
+    app.state.task_service = task_service
     app.include_router(
         api_router,
         prefix="/api",

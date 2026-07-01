@@ -10,7 +10,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
-from greatocr.app.schemas import NewTask, TaskRecord, TaskStatus
+from greatocr.app.schemas import (
+    NewTask,
+    RequestedTaskAction,
+    TaskRecord,
+    TaskStatus,
+)
 
 
 SCHEMA_VERSION = 1
@@ -57,8 +62,8 @@ class TaskDatabase:
                 INSERT INTO tasks (
                     task_id, display_name, source_path, sensitive, selected_pages,
                     provider_profile_id, approved_fallback_ids, status, output_dir,
-                    quality_rating, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    quality_rating, requested_action, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.task_id,
@@ -71,6 +76,7 @@ class TaskDatabase:
                     record.status,
                     record.output_dir,
                     record.quality_rating,
+                    record.requested_action,
                     record.created_at,
                 ),
             )
@@ -84,6 +90,13 @@ class TaskDatabase:
             ).fetchone()
         return self._task_from_row(row) if row is not None else None
 
+    def list_tasks(self) -> list[TaskRecord]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT * FROM tasks ORDER BY rowid"
+            ).fetchall()
+        return [self._task_from_row(row) for row in rows]
+
     def update_task_status(self, task_id: str, status: TaskStatus) -> None:
         with self._lock, self._connection:
             cursor = self._connection.execute(
@@ -92,6 +105,80 @@ class TaskDatabase:
             )
         if cursor.rowcount != 1:
             raise KeyError(task_id)
+
+    def request_task_action(
+        self,
+        task_id: str,
+        action: RequestedTaskAction,
+    ) -> None:
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                """
+                UPDATE tasks SET requested_action = ?
+                WHERE task_id = ? AND status = 'running'
+                """,
+                (action, task_id),
+            )
+        if cursor.rowcount != 1:
+            raise ValueError("task is not running")
+
+    def apply_requested_action(self, task_id: str) -> TaskRecord:
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT requested_action FROM tasks WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(task_id)
+            action = row["requested_action"]
+            if action is not None:
+                next_status = "paused" if action == "pause" else "cancelled"
+                self._connection.execute(
+                    """
+                    UPDATE tasks SET status = ?, requested_action = NULL
+                    WHERE task_id = ?
+                    """,
+                    (next_status, task_id),
+                )
+            updated = self._connection.execute(
+                "SELECT * FROM tasks WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+        assert updated is not None
+        return self._task_from_row(updated)
+
+    def claim_next_pending_task(self) -> TaskRecord | None:
+        with self._lock, self._connection:
+            running = self._connection.execute(
+                "SELECT 1 FROM tasks WHERE status = 'running' LIMIT 1"
+            ).fetchone()
+            if running is not None:
+                return None
+            row = self._connection.execute(
+                "SELECT task_id FROM tasks WHERE status = 'pending' ORDER BY rowid LIMIT 1"
+            ).fetchone()
+            if row is None:
+                return None
+            self._connection.execute(
+                "UPDATE tasks SET status = 'running' WHERE task_id = ?",
+                (row["task_id"],),
+            )
+            claimed = self._connection.execute(
+                "SELECT * FROM tasks WHERE task_id = ?",
+                (row["task_id"],),
+            ).fetchone()
+        assert claimed is not None
+        return self._task_from_row(claimed)
+
+    def pause_running_tasks(self) -> int:
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                """
+                UPDATE tasks SET status = 'paused', requested_action = NULL
+                WHERE status = 'running'
+                """
+            )
+        return cursor.rowcount
 
     def save_provider(self, profile: Mapping[str, Any] | BaseModel) -> None:
         payload = profile.model_dump() if isinstance(profile, BaseModel) else dict(profile)
@@ -186,6 +273,7 @@ class TaskDatabase:
                     status TEXT NOT NULL,
                     output_dir TEXT NOT NULL,
                     quality_rating TEXT,
+                    requested_action TEXT,
                     created_at TEXT NOT NULL
                 );
 
@@ -226,6 +314,7 @@ class TaskDatabase:
             status=row["status"],
             output_dir=row["output_dir"],
             quality_rating=row["quality_rating"],
+            requested_action=row["requested_action"],
             created_at=row["created_at"],
         )
 

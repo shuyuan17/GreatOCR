@@ -14,6 +14,7 @@ TaskStatus = Literal[
     "failed",
     "cancelled",
 ]
+RequestedTaskAction = Literal["pause", "cancel"]
 
 
 class NewTask(BaseModel):
@@ -47,4 +48,5 @@ class TaskRecord(BaseModel):
     status: TaskStatus
     output_dir: str
     quality_rating: str | None = None
+    requested_action: RequestedTaskAction | None = None
     created_at: str
