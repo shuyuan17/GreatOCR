@@ -16,6 +16,9 @@ class ProviderCapabilities(BaseModel):
     formulas: bool
     languages: list[str]
     data_residency: str = "provider-defined"
+    text: bool = True
+    layout: bool = False
+    images: bool = False
 
 
 class ParserJobResult(BaseModel):

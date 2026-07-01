@@ -47,7 +47,9 @@ def test_mineru_capabilities_do_not_require_network() -> None:
     assert capabilities.native_pdf is True
     assert capabilities.scanned_pdf is True
     assert capabilities.coordinates is True
+    assert capabilities.layout is True
     assert capabilities.tables is True
+    assert capabilities.images is True
     assert capabilities.formulas is True
 
 
