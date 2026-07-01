@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from greatocr.ingest.preflight import PreflightResult
 
@@ -32,6 +33,8 @@ class DataFlowSummary(BaseModel):
     external_upload_allowed: bool
     requires_confirmation: bool
     retention_policy: RetentionPolicy
+    approved_profile_ids: list[str] = Field(default_factory=list)
+    confirmed_at: datetime | None = None
 
 
 def build_data_flow_summary(config, preflight: PreflightResult) -> DataFlowSummary:
@@ -56,4 +59,20 @@ def build_data_flow_summary(config, preflight: PreflightResult) -> DataFlowSumma
         external_upload_allowed=external_upload_allowed,
         requires_confirmation=sensitive or not external_upload_allowed,
         retention_policy=retention_policy,
+    )
+
+
+def approve_data_flow(
+    summary: DataFlowSummary,
+    approved_profile_ids: list[str],
+) -> DataFlowSummary:
+    if not approved_profile_ids:
+        raise ValueError("at least one provider profile must be approved")
+    return summary.model_copy(
+        update={
+            "approved_profile_ids": list(dict.fromkeys(approved_profile_ids)),
+            "confirmed_at": datetime.now(timezone.utc),
+            "external_upload_allowed": True,
+            "requires_confirmation": False,
+        }
     )

@@ -10,7 +10,7 @@ from greatocr.ingest.preflight import run_preflight
 from greatocr.pipeline import run_pipeline
 from greatocr.providers.fake import FakeDocumentParser
 from greatocr.reasoning.base import CorrectionProposal, TextReasoner
-from greatocr.security import SecurityMode, build_data_flow_summary
+from greatocr.security import SecurityMode, approve_data_flow, build_data_flow_summary
 from greatocr.task.manifest import load_manifest
 
 
@@ -155,3 +155,27 @@ def test_reasoner_failure_does_not_block_docx_generation(tmp_path: Path) -> None
     assert (tmp_path / "task" / "result.docx").is_file()
     assert reasoner.calls == 1
     assert "reasoning_failed" in {issue.issue_type for issue in document.issues}
+
+
+def test_pipeline_manifest_keeps_task_level_provider_approval(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "sample.pdf"
+    create_pdf(pdf_path)
+    preflight = run_preflight(pdf_path)
+    summary = approve_data_flow(
+        build_data_flow_summary(
+            EngineConfig(provider=ProviderConfig(name="fake", public=False)),
+            preflight,
+        ),
+        ["fake-default", "private-backup"],
+    )
+
+    run_pipeline(
+        tmp_path / "task",
+        preflight,
+        FakeDocumentParser(FIXTURE),
+        summary,
+    )
+    manifest = load_manifest(tmp_path / "task" / "intermediates" / "task-manifest.json")
+
+    assert manifest.approved_profile_ids == ["fake-default", "private-backup"]
+    assert manifest.security_confirmation_at == summary.confirmed_at

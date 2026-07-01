@@ -39,3 +39,16 @@ def test_manifest_does_not_save_api_key(tmp_path: Path) -> None:
 
     assert "secret" not in text
     assert "***" in text
+
+
+def test_manifest_records_task_level_provider_approval(tmp_path: Path) -> None:
+    manifest = TaskManifest(
+        source_fingerprint="a" * 64,
+        approved_profile_ids=["mineru-default", "private-backup"],
+    )
+
+    save_manifest(manifest, tmp_path / "task-manifest.json")
+    loaded = load_manifest(tmp_path / "task-manifest.json")
+
+    assert loaded.approved_profile_ids == ["mineru-default", "private-backup"]
+    assert loaded.security_confirmation_at is not None

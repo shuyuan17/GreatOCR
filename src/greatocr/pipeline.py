@@ -190,6 +190,13 @@ def run_pipeline(
             ),
         },
     )
+    if security_summary.approved_profile_ids:
+        manifest = manifest.model_copy(
+            update={
+                "approved_profile_ids": security_summary.approved_profile_ids,
+                "security_confirmation_at": security_summary.confirmed_at,
+            }
+        )
     if selected_pages is None and isinstance(manifest.config.get("selected_pages"), list):
         selected_pages = [int(page) for page in manifest.config["selected_pages"]]
         task_to_original = _page_mapping(

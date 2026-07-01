@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 StageStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
@@ -26,6 +26,14 @@ class TaskManifest(BaseModel):
     config: dict = Field(default_factory=dict)
     stages: dict[str, StageRecord] = Field(default_factory=dict)
     outputs: dict[str, str] = Field(default_factory=dict)
+    approved_profile_ids: list[str] = Field(default_factory=list)
+    security_confirmation_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def record_security_confirmation(self) -> "TaskManifest":
+        if self.approved_profile_ids and self.security_confirmation_at is None:
+            object.__setattr__(self, "security_confirmation_at", datetime.now(timezone.utc))
+        return self
 
 
 def save_manifest(manifest: TaskManifest, path: Path) -> Path:
