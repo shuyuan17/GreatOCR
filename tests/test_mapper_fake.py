@@ -65,3 +65,28 @@ def test_unknown_provider_block_creates_warning_issue() -> None:
     assert document.issues[0].issue_type == "unknown_provider_block"
     assert document.issues[0].severity == "medium"
     assert "stamp" in document.issues[0].message
+
+
+def test_mapper_preserves_already_normalized_provider_bbox() -> None:
+    raw = {
+        "provider": {"name": "generic_vision"},
+        "document": {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "blocks": [
+                        {
+                            "type": "paragraph",
+                            "text": "Normalized",
+                            "bbox": [0.1, 0.2, 0.8, 0.3],
+                            "bbox_unit": "normalized",
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+    document = map_provider_result(raw, make_preflight())
+
+    assert document.pages[0].blocks[0].bbox == [0.1, 0.2, 0.8, 0.3]
