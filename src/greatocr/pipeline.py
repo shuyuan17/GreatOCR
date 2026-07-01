@@ -8,11 +8,12 @@ from greatocr.docx.builder import build_docx
 from greatocr.docx.validate_docx import validate_docx_package
 from greatocr.ingest.preflight import PreflightResult
 from greatocr.model.critical_fields import detect_critical_fields
-from greatocr.model.document import Document
+from greatocr.model.document import Document, Issue
 from greatocr.model.mapper import map_provider_result
 from greatocr.model.markdown_export import export_markdown
 from greatocr.providers.base import DocumentParser, ParserJobResult
 from greatocr.providers.mineru_zip import load_mineru_zip_result
+from greatocr.reasoning.base import TextReasoner, run_reasoning_stage
 from greatocr.reports.quality_docx import write_quality_docx
 from greatocr.reports.quality_json import write_quality_json
 from greatocr.security import DataFlowSummary
@@ -165,6 +166,8 @@ def run_pipeline(
     *,
     resume: bool = False,
     selected_pages: list[int] | None = None,
+    reasoner: TextReasoner | None = None,
+    reasoning_enabled: bool = False,
 ) -> Document:
     task_to_original = (
         {index: page for index, page in enumerate(selected_pages, start=1)}
@@ -176,6 +179,7 @@ def run_pipeline(
         preflight.file_sha256,
         {
             "provider": security_summary.provider_name,
+            "reasoning_enabled": reasoning_enabled,
             **(
                 {
                     "selected_pages": selected_pages,
@@ -242,6 +246,53 @@ def run_pipeline(
                     "content_md": "intermediates/content.md",
                 },
             )
+
+        reasoning_done = (
+            resume
+            and manifest.stages.get("reasoning", None)
+            and manifest.stages["reasoning"].status == "succeeded"
+        )
+        if not reasoning_enabled:
+            manifest = mark_stage(task_dir, manifest, "reasoning", "skipped")
+        elif not reasoning_done:
+            manifest = mark_stage(task_dir, manifest, "reasoning", "running")
+            try:
+                if reasoner is None:
+                    raise ValueError("reasoning enabled without a configured reasoner")
+                document = run_reasoning_stage(document, reasoner, enabled=True)
+                (task_dir / "intermediates" / "document.json").write_text(
+                    document.model_dump_json(indent=2),
+                    encoding="utf-8",
+                )
+                manifest = mark_stage(task_dir, manifest, "reasoning", "succeeded")
+            except Exception as exc:
+                document = document.model_copy(
+                    update={
+                        "issues": [
+                            *document.issues,
+                            Issue(
+                                issue_id="issue-reasoning-stage-failed",
+                                page_number=0,
+                                issue_type="reasoning_failed",
+                                severity="low",
+                                message="Optional text reasoning failed; parser text was preserved.",
+                                suggestion="Check the reasoner configuration or leave smart correction disabled.",
+                            ),
+                        ]
+                    },
+                    deep=True,
+                )
+                (task_dir / "intermediates" / "document.json").write_text(
+                    document.model_dump_json(indent=2),
+                    encoding="utf-8",
+                )
+                manifest = mark_stage(
+                    task_dir,
+                    manifest,
+                    "reasoning",
+                    "failed",
+                    message=type(exc).__name__,
+                )
 
         docx_done = resume and manifest.stages.get("docx", None) and manifest.stages["docx"].status == "succeeded"
         if not (docx_done and (task_dir / "result.docx").exists()):
