@@ -9,6 +9,7 @@ from greatocr.model.document import Block, Document, Page
 from greatocr.model.mapper import map_provider_result
 from greatocr.model.markdown_export import export_markdown
 from greatocr.reports.quality_docx import write_quality_docx
+from greatocr.selection.subset_pdf import write_subset_pdf
 from greatocr.task.versions import publish_result_version
 from greatocr.validation.quality import compute_quality_summary
 
@@ -74,10 +75,20 @@ def _parse_pages(task_dir: Path, document: Document, pages: list[int], parser) -
     source_pdf = task_dir / document.source_file_name
     if hasattr(parser, "parse_pages"):
         return parser.parse_pages(source_pdf, raw_result_dir, pages)
-    result = parser.parse_document(source_pdf, raw_result_dir)
     import json
 
-    return json.loads((result.raw_result_dir / "result.json").read_text(encoding="utf-8"))
+    subset = write_subset_pdf(
+        source_pdf,
+        pages,
+        task_dir / "intermediates" / "rework-selected-pages.pdf",
+    )
+    result = parser.parse_document(subset.path, raw_result_dir)
+    raw = json.loads((result.raw_result_dir / "result.json").read_text(encoding="utf-8"))
+    for raw_page in raw.get("document", {}).get("pages", []):
+        task_page = int(raw_page.get("page_number", 0))
+        if task_page in subset.task_to_original:
+            raw_page["page_number"] = subset.task_to_original[task_page]
+    return raw
 
 
 def _preflight_from_document(document: Document) -> PreflightResult:

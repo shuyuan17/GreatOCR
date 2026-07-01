@@ -17,7 +17,8 @@ from greatocr.reasoning.base import TextReasoner, run_reasoning_stage
 from greatocr.reports.quality_docx import write_quality_docx
 from greatocr.reports.quality_json import write_quality_json
 from greatocr.security import DataFlowSummary
-from greatocr.selection.subset_pdf import write_subset_pdf
+from greatocr.selection.page_ranges import PageSelection
+from greatocr.selection.subset_pdf import output_groups, write_subset_pdf
 from greatocr.task.checkpoints import load_or_create_manifest, mark_stage
 from greatocr.task.versions import publish_result_version
 from greatocr.validation.checks import run_integrity_checks
@@ -346,11 +347,67 @@ def run_pipeline(
         raise
 
 
+def run_selected_page_groups(
+    task_dir: Path,
+    preflight: PreflightResult,
+    parser: DocumentParser,
+    security_summary: DataFlowSummary,
+    selection: PageSelection,
+    *,
+    split_by_group: bool = False,
+    reasoner: TextReasoner | None = None,
+    reasoning_enabled: bool = False,
+) -> list[Document]:
+    groups = output_groups(selection, split_by_group=split_by_group)
+    if not split_by_group:
+        return [
+            run_pipeline(
+                task_dir,
+                preflight,
+                parser,
+                security_summary,
+                selected_pages=groups[0],
+                reasoner=reasoner,
+                reasoning_enabled=reasoning_enabled,
+            )
+        ]
+
+    documents: list[Document] = []
+    task_dir.mkdir(parents=True, exist_ok=True)
+    for index, pages in enumerate(groups, start=1):
+        label = _page_group_label(pages)
+        group_dir = task_dir / "groups" / f"group-{index:02d}-pages-{label}"
+        document = run_pipeline(
+            group_dir,
+            preflight,
+            parser,
+            security_summary,
+            selected_pages=pages,
+            reasoner=reasoner,
+            reasoning_enabled=reasoning_enabled,
+        )
+        shutil.copy2(group_dir / "result.docx", task_dir / f"result-pages-{label}.docx")
+        shutil.copy2(
+            group_dir / "quality-report.docx",
+            task_dir / f"quality-report-pages-{label}.docx",
+        )
+        documents.append(document)
+    return documents
+
+
 def _page_mapping(metadata: dict[str, object]) -> dict[int, int]:
     value = metadata.get("task_to_original")
     if not isinstance(value, dict):
         return {}
     return {int(task): int(original) for task, original in value.items()}
+
+
+def _page_group_label(pages: list[int]) -> str:
+    if not pages:
+        raise ValueError("page output group cannot be empty")
+    if pages == list(range(pages[0], pages[-1] + 1)):
+        return str(pages[0]) if len(pages) == 1 else f"{pages[0]}-{pages[-1]}"
+    return "_".join(str(page) for page in pages)
 
 
 def _restore_original_page_numbers(raw_result: dict, mapping: dict[int, int]) -> None:

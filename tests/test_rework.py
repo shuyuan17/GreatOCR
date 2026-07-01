@@ -1,9 +1,11 @@
 from pathlib import Path
 
 import pytest
+from pypdf import PdfReader, PdfWriter
 
 from greatocr.model.document import Block, Document, Page, Table, TableCell, TextSpan
 from greatocr.rework import ReworkTargetNotFound, rework_pages, rework_tables
+from greatocr.providers.base import ParserJobResult
 
 
 class PageReworkParser:
@@ -52,6 +54,26 @@ class TableReworkParser(PageReworkParser):
                 ]
             },
         }
+
+
+class WholeDocumentOnlyParser:
+    def __init__(self) -> None:
+        self.received_page_count = 0
+
+    def parse_document(self, source_pdf: Path, raw_result_dir: Path) -> ParserJobResult:
+        self.received_page_count = len(PdfReader(source_pdf).pages)
+        raw_result_dir.mkdir(parents=True, exist_ok=True)
+        (raw_result_dir / "result.json").write_text(
+            '{"provider":{"name":"fallback"},"document":{"pages":['
+            '{"page_number":1,"blocks":[{"type":"paragraph","text":"Recovered"}]}'
+            ']}}',
+            encoding="utf-8",
+        )
+        return ParserJobResult(
+            provider_name="fallback",
+            raw_result_dir=raw_result_dir,
+            metadata={},
+        )
 
 
 def make_task(task_dir: Path) -> None:
@@ -172,3 +194,20 @@ def test_missing_table_id_raises_clear_error(tmp_path: Path) -> None:
 
     with pytest.raises(ReworkTargetNotFound, match="missing-table"):
         rework_tables(task_dir, ["missing-table"], TableReworkParser())
+
+
+def test_rework_fallback_parser_receives_only_failed_page(tmp_path: Path) -> None:
+    task_dir = tmp_path / "task"
+    make_task(task_dir)
+    writer = PdfWriter()
+    for _ in range(5):
+        writer.add_blank_page(width=612, height=792)
+    with (task_dir / "sample.pdf").open("wb") as stream:
+        writer.write(stream)
+    parser = WholeDocumentOnlyParser()
+
+    updated = rework_pages(task_dir, [5], parser)
+
+    assert parser.received_page_count == 1
+    assert updated.pages[1].page_number == 5
+    assert updated.pages[1].blocks[0].spans[0].current_text == "Recovered"
