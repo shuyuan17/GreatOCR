@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-最后更新：2026-07-01
+最后更新：2026-07-02
 
 ## 当前项目目标是什么
 
@@ -53,16 +53,19 @@ GreatOCR 当前的总体目标是把一个本地 PDF 重建引擎逐步做成可
 - 真实 MinerU 上传已对一份用户明确授权 PDF 完成
 - 加密 PDF 会被正确识别并阻止
 - fake provider 离线验收已通过
+- V2.3 后端巡检报告已整理至 [docs/reports/RUN_REPORT.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/reports/RUN_REPORT.md)
+- V2.3 前端应用壳报告已整理至 [docs/reports/FRONTEND_REPORT.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/reports/FRONTEND_REPORT.md)
+- V2.3 App Shell 基础验证报告已整理至 [docs/reports/VALIDATION_REPORT.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/reports/VALIDATION_REPORT.md)
 
 ## 未完成的功能
 
 ### V2.3 未完成
 
 - 图形界面尚未合入主线
-- 本地 Web 应用尚未形成完整可启动交付版本
-- 前端页面组件尚未实现
+- 本地 Web 应用尚未形成完整交付版本
+- App Shell 已完成并通过基础启动与联通验证，但业务页面仍未完成
 - FastAPI 与前端静态资源的一体化发布尚未完成
-- V2.3 人工验收报告尚未生成
+- 完整端到端人工验收报告尚未生成
 
 ### V2.4 未开始
 
@@ -166,21 +169,22 @@ V2.3 工作树中的前端状态如下：
   - `frontend/package.json`
   - `vite`/`vitest`/`TypeScript` 基础配置
   - 前端测试基架
-  - 一个导航层级的测试草稿，意图包含：
+  - `App.tsx`
+  - `api.ts`
+  - `main.tsx`
+  - 一个可运行的 App Shell，包含导航与健康检查状态显示
+  - 一个导航层级的基础页面结构，当前包含：
     - 任务中心
     - 新建任务
     - 设置
 
 - 尚未完成：
-  - `App.tsx`
-  - `api.ts`
-  - `main.tsx`
   - `TaskCenter.tsx`
   - `NewTaskWizard.tsx`
   - `TaskDetail.tsx`
   - `Settings.tsx`
 
-结论：前端目前还处于“脚手架和测试准备阶段”，没有实际可用页面。
+结论：前端已从“纯脚手架阶段”进入“可运行 App Shell 阶段”。当前页面已可启动、可显示、可访问 `/api/health`，但业务页面仍以占位实现为主，尚未进入完整可交付状态。
 
 ## 如何启动项目
 
@@ -215,7 +219,20 @@ python -m venv .venv
 
 ### V2.3 工作树
 
-后端和前端代码还未形成正式启动说明，也没有完整前端实现，因此目前不建议作为可交付应用启动。现阶段更适合继续开发与测试，而不是给最终用户使用。
+V2.3 当前已有明确的开发态启动与验证记录，可参考：
+
+- [docs/reports/RUN_REPORT.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/reports/RUN_REPORT.md)
+- [docs/reports/FRONTEND_REPORT.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/reports/FRONTEND_REPORT.md)
+- [docs/reports/VALIDATION_REPORT.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/reports/VALIDATION_REPORT.md)
+
+当前判断：
+
+- 后端可启动
+- 前端可启动
+- 前端可访问 `/api/health`
+- App Shell 页面可正常显示
+
+但它仍然是开发态成果，不等于完整交付版本；现阶段更适合继续开发与测试，而不是直接给最终用户使用。
 
 ## 当前有哪些已知问题
 
@@ -228,9 +245,9 @@ python -m venv .venv
 ### V2.3 层面
 
 - Web API 尚未合入主线
-- 前端页面实际未实现，只存在脚手架和测试文件
+- 前端 App Shell 已实现并通过基础验证，但核心业务页面仍未完成
 - 前后端集成、静态资源托管和最终启动方式尚未收口
-- `main` 根目录不存在 `README.md`，上手信息需要从计划和代码推断
+- 主线与工作树状态需要在文档中明确区分
 
 ### 安全与流程边界
 
@@ -241,10 +258,16 @@ python -m venv .venv
 
 1. 先完成 V2.3 Task 5：把前端应用壳、`App.tsx`、`api.ts`、`main.tsx` 补齐，让导航与 token 请求链路真正可运行。
 2. 再完成 V2.3 Task 6：实现任务中心、新建任务向导、任务详情、设置页面。
-3. 完成 V2.3 Task 7：把前端构建产物接入 FastAPI，跑通 fake provider 端到端验收，并补 `v2-3-local-app-report.md`。
+3. 完成 V2.3 Task 7：把前端构建产物接入 FastAPI，跑通 fake provider 端到端验收，并补完整的 `v2-3-local-app-report.md`。
 4. V2.3 全量验证通过后，再决定是否合并回 `main`。
 5. 最后进入 V2.4：做便携打包、干净环境验证和发布说明。
 
 ## 现状结论
 
 现在的 GreatOCR 已经是一个功能完整度较高的本地 OCR 重建引擎，主线价值主要在“CLI + 安全控制 + Word 重建 + 质量报告 + 选页与返工能力”。项目当前真正的开发重心已经从“引擎能力”转向“本地图形界面交付”和“最终发布形态”。
+
+补充结论：
+
+- 以仓库根目录视角看，主线仍以 CLI/引擎为主
+- 以 V2.3 工作树视角看，App Shell 已完成并通过基础验证
+- 下一阶段重点应放在业务页面落地与前后端完整集成，而不是重复搭脚手架
