@@ -14,16 +14,18 @@
 - 支持 `result.docx` 输出与可选 `quality-report.docx`
 - 支持本地 SQLite 持久化任务、Provider 与 Preferences
 - 完成 V2.3 RC1 验证并整理为正式发布版本
+- Windows MVP 一键安装脚本（install.bat）与一键启动脚本（start.bat）
 
 ## 当前功能边界
 
 - 已具备可运行、可验证的本地 OCR MVP
 - 主流程覆盖：上传 -> 选页 -> OCR -> 查看结果 -> 打开输出 -> 删除记录
+- 支持一键安装（install.bat）与一键启动（start.bat），降低使用门槛
 - 适合本地验证、日常试用与后续 Windows 打包准备
 
 ## 已知限制
 
-- 当前仍需分别启动后端与前端
+- 当前仍需分别启动后端与前端（已通过 start.bat 简化，但仍是两个进程）
 - 尚未提供 Windows 打包交付物
 - OCR 识别质量和版式恢复仍有提升空间
 - 印章/签字识别、批量 OCR、更多导出格式尚未完成

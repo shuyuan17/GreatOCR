@@ -21,6 +21,7 @@
 | M4.5 MVP 可用性修复 | Done |
 | RC1 最终验收 | Done |
 | V2.3 Release 文档整理 | Done |
+| Windows MVP install/start scripts | Done |
 
 ## 已完成交付
 
@@ -29,6 +30,7 @@
 - 任务中心结果下载、打开输出目录、批量删除
 - `fake-default` 离线链路与 MinerU 接入路径
 - `result.docx` 与 `quality-report.docx` 输出
+- Windows MVP 一键安装与启动脚本（install.bat / start.bat）
 
 ## V2.4 Backlog
 
