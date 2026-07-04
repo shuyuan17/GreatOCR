@@ -1,0 +1,1 @@
+"""Local GreatOCR web application."""

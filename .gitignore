@@ -19,4 +19,21 @@ releases/**/*.zip
 releases/**/result/
 *.key
 .env
-.workbuddy/
+# QA
+.qa-logs/
+
+# Runtime data
+data/
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Environment
+.env
+.env.local
+
+docs/superpowers/
