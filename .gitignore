@@ -19,3 +19,4 @@ releases/**/*.zip
 releases/**/result/
 *.key
 .env
+.workbuddy/
