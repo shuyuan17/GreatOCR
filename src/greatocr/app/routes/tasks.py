@@ -5,15 +5,27 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from greatocr.app.schemas import NewTask, TaskRecord
+from greatocr.app.schemas import (
+    DefaultOutputDirResponse,
+    NewTask,
+    TaskRecord,
+    TaskResultFileEntry,
+    TaskResultSummary,
+)
 from greatocr.app.services.task_service import TaskService, TaskServiceError
 from greatocr.ingest.preflight import InvalidPdfError, run_preflight
 from greatocr.selection.page_ranges import PageRangeError, parse_page_ranges
 
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+RESULT_FILES = {
+    "result_docx": "result.docx",
+    "quality_report_docx": "quality-report.docx",
+}
 
 
 class StartConfirmation(BaseModel):
@@ -64,6 +76,13 @@ def create_task(payload: NewTask, request: Request) -> TaskRecord:
 @router.get("")
 def list_tasks(request: Request) -> list[TaskRecord]:
     return _service(request).list()
+
+
+@router.get("/default-output-dir")
+def default_output_dir(request: Request) -> DefaultOutputDirResponse:
+    return DefaultOutputDirResponse(
+        output_dir=str(_service(request).default_output_dir())
+    )
 
 
 @router.get("/{task_id}")
@@ -147,6 +166,43 @@ def open_task_output(task_id: str, request: Request) -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.get("/{task_id}/result-files")
+def task_result_files(task_id: str, request: Request) -> TaskResultSummary:
+    task = _run(lambda: _service(request).get(task_id))
+    output_dir = Path(task.output_dir)
+    files = {
+        key: TaskResultFileEntry(
+            key=key,
+            filename=filename,
+            exists=(output_dir / filename).is_file(),
+            download_path=(
+                f"/api/tasks/{task_id}/download/{filename}"
+                if (output_dir / filename).is_file()
+                else None
+            ),
+        )
+        for key, filename in RESULT_FILES.items()
+    }
+    return TaskResultSummary(task=task, files=files)
+
+
+@router.get("/{task_id}/download/{filename}")
+def download_task_result(task_id: str, filename: str, request: Request) -> FileResponse:
+    task = _run(lambda: _service(request).get(task_id))
+    if filename not in RESULT_FILES.values():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "RESULT_FILE_NOT_FOUND"},
+        )
+    target = Path(task.output_dir) / filename
+    if not target.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "RESULT_FILE_NOT_FOUND"},
+        )
+    return FileResponse(target, filename=filename)
+
+
 # ---------------------------------------------------------------------------
 # 文件上传 + 创建任务（合并为一步，适合 Web 前端使用）
 # ---------------------------------------------------------------------------
@@ -166,6 +222,7 @@ async def upload_and_create_task(
     sensitive: bool = Form(False),
     provider_profile_id: str = Form("fake-default"),
     pages: str = Form(""),
+    output_dir: str = Form(""),
     approved_fallback_ids: str = Form(""),
 ) -> UploadResult:
     """接收文件上传，保存到 uploads 目录后直接创建任务。
@@ -249,6 +306,7 @@ async def upload_and_create_task(
         sensitive=sensitive,
         pages=parsed_pages,
         provider_profile_id=provider_profile_id,
+        output_dir=output_dir.strip() or None,
         approved_fallback_ids=parsed_fallback,
     )
     task = _run(lambda: _service(request).create(new_task))

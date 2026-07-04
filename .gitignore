@@ -19,3 +19,19 @@ releases/**/*.zip
 releases/**/result/
 *.key
 .env
+# QA
+.qa-logs/
+
+# Runtime data
+data/
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Environment
+.env
+.env.local

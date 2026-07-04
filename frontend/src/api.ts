@@ -25,7 +25,7 @@ export async function apiFetch(
 }
 
 /* ------------------------------------------------------------------ */
-/*  API 类型                                                           */
+/*  API types                                                          */
 /* ------------------------------------------------------------------ */
 
 export type TaskStatus =
@@ -52,10 +52,29 @@ export interface TaskRecord {
   created_at: string
 }
 
+export interface TaskResultFileEntry {
+  key: string
+  filename: string
+  exists: boolean
+  download_path: string | null
+}
+
+export interface TaskResultSummary {
+  task: TaskRecord
+  files: {
+    result_docx: TaskResultFileEntry
+    quality_report_docx: TaskResultFileEntry
+  }
+}
+
 export interface UploadResult {
   task: TaskRecord
   file_path: string
   size_bytes: number
+}
+
+export interface DefaultOutputDirResponse {
+  output_dir: string
 }
 
 export interface ProviderView {
@@ -76,21 +95,27 @@ export interface ProviderView {
 /*  Task API                                                           */
 /* ------------------------------------------------------------------ */
 
-/** 上传文件并创建任务 */
 export async function uploadFile(
   file: File,
   opts?: {
     sensitive?: boolean
     providerProfileId?: string
     pages?: string
+    outputDir?: string
   },
 ): Promise<UploadResult> {
   const form = new FormData()
   form.append("file", file)
   if (opts?.sensitive) form.append("sensitive", "true")
-  if (opts?.providerProfileId)
+  if (opts?.providerProfileId) {
     form.append("provider_profile_id", opts.providerProfileId)
-  if (opts?.pages?.trim()) form.append("pages", opts.pages.trim())
+  }
+  if (opts?.pages?.trim()) {
+    form.append("pages", opts.pages.trim())
+  }
+  if (opts?.outputDir?.trim()) {
+    form.append("output_dir", opts.outputDir.trim())
+  }
 
   const res = await apiFetch("/tasks/upload-file", {
     method: "POST",
@@ -103,14 +128,22 @@ export async function uploadFile(
   return res.json()
 }
 
-/** 获取单个任务详情 */
-export async function getTask(taskId: string): Promise<TaskRecord> {
-  const res = await apiFetch(`/tasks/${taskId}`)
-  if (!res.ok) throw new Error(`获取任务失败 (${res.status})`)
+export async function getDefaultOutputDir(): Promise<DefaultOutputDirResponse> {
+  const res = await apiFetch("/tasks/default-output-dir")
+  if (!res.ok) {
+    throw new Error(`鑾峰彇榛樿杈撳嚭鐩綍澶辫触 (${res.status})`)
+  }
   return res.json()
 }
 
-/** 启动任务（从 paused → pending） */
+export async function getTask(taskId: string): Promise<TaskRecord> {
+  const res = await apiFetch(`/tasks/${taskId}`)
+  if (!res.ok) {
+    throw new Error(`获取任务失败 (${res.status})`)
+  }
+  return res.json()
+}
+
 export async function startTask(taskId: string): Promise<TaskRecord> {
   const res = await apiFetch(`/tasks/${taskId}/start`, { method: "POST" })
   if (!res.ok) {
@@ -120,16 +153,26 @@ export async function startTask(taskId: string): Promise<TaskRecord> {
   return res.json()
 }
 
-/** 列出任务 */
 export async function listTasks(): Promise<TaskRecord[]> {
   const res = await apiFetch("/tasks")
-  if (!res.ok) throw new Error(`获取任务列表失败 (${res.status})`)
+  if (!res.ok) {
+    throw new Error(`获取任务列表失败 (${res.status})`)
+  }
   return res.json()
 }
 
-/** 获取 Provider 列表 */
+export async function getTaskResultFiles(taskId: string): Promise<TaskResultSummary> {
+  const res = await apiFetch(`/tasks/${taskId}/result-files`)
+  if (!res.ok) {
+    throw new Error(`获取结果文件失败 (${res.status})`)
+  }
+  return res.json()
+}
+
 export async function listProviders(): Promise<ProviderView[]> {
   const res = await apiFetch("/providers")
-  if (!res.ok) throw new Error(`获取 Provider 列表失败 (${res.status})`)
+  if (!res.ok) {
+    throw new Error(`获取 Provider 列表失败 (${res.status})`)
+  }
   return res.json()
 }

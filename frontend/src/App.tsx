@@ -1,17 +1,76 @@
-import { useCallback, useEffect, useRef, useState } from "react"
-import { Link, Route, Routes, useNavigate } from "react-router-dom"
-import { apiFetch, getTask, listProviders, startTask, uploadFile, type ProviderView, type TaskRecord, type TaskStatus } from "./api"
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react"
+import { Link, Route, Routes, useNavigate, useSearchParams } from "react-router-dom"
+import {
+  apiFetch,
+  getDefaultOutputDir,
+  getTask,
+  getTaskResultFiles,
+  listProviders,
+  listTasks,
+  startTask,
+  uploadFile,
+  type ProviderView,
+  type TaskRecord,
+  type TaskResultSummary,
+  type TaskStatus,
+} from "./api"
 import { isPdfFile, validatePageRange } from "./pageRanges"
-
-/* ================================================================== */
-/*  Health check badge                                                 */
-/* ================================================================== */
 
 type HealthState = "loading" | "ok" | "error"
 
+const STATUS_LABELS: Record<TaskStatus, string> = {
+  pending: "等待处理",
+  running: "处理中",
+  paused: "已暂停",
+  succeeded: "已完成",
+  partial: "部分完成",
+  failed: "失败",
+  cancelled: "已取消",
+}
+
+const STATUS_COLORS: Record<TaskStatus, string> = {
+  pending: "#856404",
+  running: "#1565c0",
+  paused: "#6a1b9a",
+  succeeded: "#2e7d32",
+  partial: "#e65100",
+  failed: "#c62828",
+  cancelled: "#9e9e9e",
+}
+
+const TERMINAL_STATUSES: TaskStatus[] = ["succeeded", "partial", "failed", "cancelled"]
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatPages(pages: number[]): string {
+  if (pages.length === 0) return "全部页面"
+  if (pages.length === 1) return `第 ${pages[0]} 页`
+  return pages.join(", ")
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function canViewResults(status: TaskStatus): boolean {
+  return TERMINAL_STATUSES.includes(status)
+}
+
 function HealthBadge() {
   const [state, setState] = useState<HealthState>("loading")
-  const [label, setLabel] = useState("正在连接后端…")
+  const [label, setLabel] = useState("正在连接后端...")
 
   useEffect(() => {
     let cancelled = false
@@ -50,8 +109,7 @@ function HealthBadge() {
     }
   }, [])
 
-  const indicator =
-    state === "loading" ? "🔄" : state === "ok" ? "✅" : "❌"
+  const indicator = state === "loading" ? "⏳" : state === "ok" ? "✅" : "❌"
 
   return (
     <span
@@ -74,44 +132,6 @@ function HealthBadge() {
   )
 }
 
-/* ================================================================== */
-/*  状态中文名称                                                        */
-/* ================================================================== */
-
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  pending: "等待处理",
-  running: "处理中",
-  paused: "已暂停",
-  succeeded: "已完成",
-  partial: "部分完成",
-  failed: "失败",
-  cancelled: "已取消",
-}
-
-const STATUS_COLORS: Record<TaskStatus, string> = {
-  pending: "#856404",
-  running: "#1565c0",
-  paused: "#6a1b9a",
-  succeeded: "#2e7d32",
-  partial: "#e65100",
-  failed: "#c62828",
-  cancelled: "#9e9e9e",
-}
-
-/* ================================================================== */
-/*  文件尺寸格式化                                                      */
-/* ================================================================== */
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-/* ================================================================== */
-/*  新建任务 — 上传 + OCR                                              */
-/* ================================================================== */
-
 function NewTaskPage() {
   const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -119,48 +139,56 @@ function NewTaskPage() {
   const [providers, setProviders] = useState<ProviderView[]>([])
   const [selectedProvider, setSelectedProvider] = useState("fake-default")
   const [pageRange, setPageRange] = useState("")
-  const [phase, setPhase] = useState<"idle" | "uploading" | "starting" | "running" | "done" | "error">("idle")
+  const [outputDir, setOutputDir] = useState("")
+  const [phase, setPhase] = useState<
+    "idle" | "uploading" | "starting" | "running" | "done" | "error"
+  >("idle")
   const [task, setTask] = useState<TaskRecord | null>(null)
   const [errorMsg, setErrorMsg] = useState("")
   const [progressMsg, setProgressMsg] = useState("")
   const pageRangeError = validatePageRange(pageRange)
   const pdfSelected = isPdfFile(file)
 
-  // 加载 Provider 列表
   useEffect(() => {
     listProviders()
       .then((list) => {
         setProviders(list)
-        if (list.length > 0 && list[0].profile_id) {
+        if (list.length > 0) {
           setSelectedProvider(list[0].profile_id)
         }
       })
       .catch(() => {})
   }, [])
 
-  // 轮询任务状态
-  const pollTask = useCallback(async (taskId: string) => {
-    const maxAttempts = 120 // 最多等 2 分钟
-    for (let i = 0; i < maxAttempts; i++) {
-      try {
-        const t = await getTask(taskId)
-        setTask(t)
-        setProgressMsg(STATUS_LABELS[t.status])
+  useEffect(() => {
+    getDefaultOutputDir()
+      .then((result) => setOutputDir(result.output_dir))
+      .catch(() => {})
+  }, [])
 
-        if (["succeeded", "failed", "partial", "cancelled"].includes(t.status)) {
+  const pollTask = useCallback(async (taskId: string) => {
+    const maxAttempts = 120
+    for (let i = 0; i < maxAttempts; i += 1) {
+      try {
+        const nextTask = await getTask(taskId)
+        setTask(nextTask)
+        setProgressMsg(STATUS_LABELS[nextTask.status])
+
+        if (TERMINAL_STATUSES.includes(nextTask.status)) {
           setPhase("done")
-          return
+          return nextTask
         }
-        if (t.status === "running") {
+        if (nextTask.status === "running") {
           setPhase("running")
         }
       } catch {
-        // 继续轮询
+        // Continue polling.
       }
-      await new Promise((r) => setTimeout(r, 1000))
+      await new Promise((resolve) => setTimeout(resolve, 1000))
     }
     setPhase("error")
-    setErrorMsg("轮询超时，请刷新页面查看任务状态")
+    setErrorMsg("轮询超时，请刷新页面后在任务中心查看结果。")
+    return null
   }, [])
 
   const handleSubmit = async () => {
@@ -176,36 +204,39 @@ function NewTaskPage() {
 
     setPhase("uploading")
     setErrorMsg("")
-    setProgressMsg("正在上传文件…")
+    setProgressMsg("正在上传文件...")
 
     try {
-      // 1. 上传文件 → 创建任务
-      const result = await uploadFile(file, {
+      const uploaded = await uploadFile(file, {
         providerProfileId: selectedProvider,
         pages: pdfSelected ? pageRange : "",
+        outputDir,
       })
-      setTask(result.task)
-      setProgressMsg("文件已上传，正在启动 OCR…")
+      setTask(uploaded.task)
+      setProgressMsg("文件已上传，正在启动 OCR...")
 
-      // 2. 启动任务
       setPhase("starting")
-      const started = await startTask(result.task.task_id)
+      const started = await startTask(uploaded.task.task_id)
       setTask(started)
 
-      // 3. 轮询等待完成
       setPhase("running")
-      setProgressMsg("任务已加入队列，等待处理…")
-      await pollTask(result.task.task_id)
+      setProgressMsg("任务已加入队列，等待处理...")
+      const finalTask = await pollTask(uploaded.task.task_id)
+      if (finalTask) {
+        navigate(`/tasks?task=${finalTask.task_id}`)
+      }
     } catch (err: unknown) {
       setPhase("error")
       setErrorMsg(err instanceof Error ? err.message : "操作失败")
     }
   }
 
-  const providerReady = selectedProvider === "fake-default" ||
-    providers.find((p) => p.profile_id === selectedProvider)?.credential?.configured
+  const providerReady =
+    selectedProvider === "fake-default" ||
+    providers.find((provider) => provider.profile_id === selectedProvider)?.credential
+      ?.configured
 
-  const statusStyle: React.CSSProperties = {
+  const statusStyle: CSSProperties = {
     marginTop: 16,
     padding: "12px 16px",
     borderRadius: 8,
@@ -217,26 +248,28 @@ function NewTaskPage() {
     <div style={{ padding: "2rem", maxWidth: 640, margin: "0 auto" }}>
       <h2 style={{ marginTop: 0, color: "#333" }}>新建 OCR 任务</h2>
 
-      {/* 文件选择 */}
       <div style={{ marginBottom: 16 }}>
-        <label style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}>
+        <label
+          htmlFor="source-file"
+          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
+        >
           选择文件（图片或 PDF）
         </label>
         <input
           id="source-file"
-          aria-label="选择文件（图片或 PDF）"
+          aria-label="选择文件"
           ref={fileRef}
           type="file"
           accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif,.bmp"
-          onChange={(e) => {
-            const nextFile = e.target.files?.[0] ?? null
+          disabled={phase !== "idle"}
+          onChange={(event) => {
+            const nextFile = event.target.files?.[0] ?? null
             setFile(nextFile)
             setErrorMsg("")
             if (!isPdfFile(nextFile)) {
               setPageRange("")
             }
           }}
-          disabled={phase !== "idle"}
           style={{ fontSize: "0.95rem" }}
         />
         {file && (
@@ -247,7 +280,10 @@ function NewTaskPage() {
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <label style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}>
+        <label
+          htmlFor="page-range"
+          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
+        >
           页码范围
         </label>
         <input
@@ -255,46 +291,86 @@ function NewTaskPage() {
           aria-label="页码范围"
           type="text"
           value={pageRange}
-          onChange={(e) => {
-            setPageRange(e.target.value)
+          disabled={phase !== "idle" || !pdfSelected}
+          onChange={(event) => {
+            setPageRange(event.target.value)
             setErrorMsg("")
           }}
-          disabled={phase !== "idle" || !pdfSelected}
-          placeholder="留空处理全部页面；示例：1-3,5,7-9"
-          style={{ width: "100%", fontSize: "0.95rem", padding: "8px 10px", boxSizing: "border-box" }}
+          placeholder="留空处理全部页面，例如：1-3,5,7-9"
+          style={{
+            width: "100%",
+            fontSize: "0.95rem",
+            padding: "8px 10px",
+            boxSizing: "border-box",
+          }}
         />
-        <div style={{ marginTop: 6, fontSize: "0.8rem", color: pageRangeError ? "#c62828" : "#666" }}>
-          {pageRangeError || (pdfSelected ? "支持 1、1-3、1,3,5、1-3,5,7-9；留空表示全部页面" : "仅 PDF 支持页码范围")}
+        <div
+          style={{
+            marginTop: 6,
+            fontSize: "0.8rem",
+            color: pageRangeError ? "#c62828" : "#666",
+          }}
+        >
+          {pageRangeError ||
+            (pdfSelected
+              ? "支持 1、1-3、1,3,5、1-3,5,7-9；留空表示全部页面"
+              : "仅 PDF 支持页码范围")}
         </div>
       </div>
 
-      {/* Provider 选择 */}
       <div style={{ marginBottom: 16 }}>
-        <label style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}>
+        <label
+          htmlFor="provider-select"
+          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
+        >
           OCR Provider
         </label>
         <select
           id="provider-select"
           aria-label="OCR Provider"
           value={selectedProvider}
-          onChange={(e) => setSelectedProvider(e.target.value)}
           disabled={phase !== "idle"}
+          onChange={(event) => setSelectedProvider(event.target.value)}
           style={{ fontSize: "0.95rem", padding: "4px 8px" }}
         >
-          {providers.map((p) => (
-            <option key={p.profile_id} value={p.profile_id}>
-              {p.display_name} {p.credential?.configured ? "✅" : "⚠️ 未配置"}
+          {providers.map((provider) => (
+            <option key={provider.profile_id} value={provider.profile_id}>
+              {provider.display_name}{" "}
+              {provider.credential?.configured ? "已配置" : "未配置"}
             </option>
           ))}
         </select>
         {selectedProvider !== "fake-default" && !providerReady && (
           <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#c62828" }}>
-            ⚠️ 该 Provider 未配置 API Key，请在"设置"中先配置
+            当前 Provider 未配置 API Key，请先在设置中完成配置。
           </div>
         )}
       </div>
 
-      {/* 开始按钮 */}
+      <div style={{ marginBottom: 16 }}>
+        <label
+          htmlFor="output-dir"
+          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
+        >
+          输出路径
+        </label>
+        <input
+          id="output-dir"
+          aria-label="输出路径"
+          type="text"
+          value={outputDir}
+          disabled={phase !== "idle"}
+          onChange={(event) => setOutputDir(event.target.value)}
+          placeholder="默认输出到 data/exports，也可以手动填写自定义目录"
+          style={{
+            width: "100%",
+            fontSize: "0.95rem",
+            padding: "8px 10px",
+            boxSizing: "border-box",
+          }}
+        />
+      </div>
+
       <button
         onClick={handleSubmit}
         disabled={!file || phase !== "idle" || (!providerReady && selectedProvider !== "fake-default")}
@@ -309,30 +385,60 @@ function NewTaskPage() {
           cursor: phase !== "idle" ? "not-allowed" : "pointer",
         }}
       >
-        {phase === "idle" ? "开始 OCR" :
-         phase === "uploading" ? "上传中…" :
-         phase === "starting" ? "启动中…" :
-         phase === "running" ? "OCR 处理中…" :
-         "完成"}
+        {phase === "idle"
+          ? "开始 OCR"
+          : phase === "uploading"
+            ? "上传中..."
+            : phase === "starting"
+              ? "启动中..."
+              : phase === "running"
+                ? "OCR 处理中..."
+                : "完成"}
       </button>
 
-      {/* 进度 / 状态 */}
       {phase !== "idle" && (
-        <div style={{
-          ...statusStyle,
-          background: phase === "error" ? "#fde8e8" : phase === "done" && task?.status === "succeeded" ? "#e6f7e6" : "#e3f2fd",
-          color: phase === "error" ? "#c62828" : phase === "done" && task?.status === "succeeded" ? "#2e7d32" : "#1565c0",
-        }}>
-          <div><strong>状态：</strong>{progressMsg}</div>
+        <div
+          style={{
+            ...statusStyle,
+            background:
+              phase === "error"
+                ? "#fde8e8"
+                : phase === "done" && task?.status === "succeeded"
+                  ? "#e6f7e6"
+                  : "#e3f2fd",
+            color:
+              phase === "error"
+                ? "#c62828"
+                : phase === "done" && task?.status === "succeeded"
+                  ? "#2e7d32"
+                  : "#1565c0",
+          }}
+        >
+          <div>
+            <strong>状态：</strong>
+            {progressMsg}
+          </div>
           {task && (
             <>
-              <div><strong>任务 ID：</strong><code style={{ fontSize: "0.85rem" }}>{task.task_id}</code></div>
-              <div><strong>文件名：</strong>{task.display_name}</div>
+              <div>
+                <strong>任务 ID：</strong>
+                <code style={{ fontSize: "0.85rem" }}>{task.task_id}</code>
+              </div>
+              <div>
+                <strong>文件名：</strong>
+                {task.display_name}
+              </div>
               {task.status !== "running" && task.status !== "pending" && (
-                <div><strong>输出目录：</strong><code style={{ fontSize: "0.85rem" }}>{task.output_dir}</code></div>
+                <div>
+                  <strong>输出目录：</strong>
+                  <code style={{ fontSize: "0.85rem" }}>{task.output_dir}</code>
+                </div>
               )}
               {task.quality_rating && (
-                <div><strong>质量评分：</strong>{task.quality_rating}</div>
+                <div>
+                  <strong>质量评分：</strong>
+                  {task.quality_rating}
+                </div>
               )}
             </>
           )}
@@ -343,7 +449,7 @@ function NewTaskPage() {
       {phase === "done" && task && (
         <div style={{ marginTop: 16 }}>
           <button
-            onClick={() => navigate("/tasks")}
+            onClick={() => navigate(`/tasks?task=${task.task_id}`)}
             style={{
               padding: "8px 20px",
               fontSize: "0.95rem",
@@ -354,7 +460,7 @@ function NewTaskPage() {
               cursor: "pointer",
             }}
           >
-            查看任务列表
+            查看当前任务结果
           </button>
         </div>
       )}
@@ -362,26 +468,40 @@ function NewTaskPage() {
   )
 }
 
-/* ================================================================== */
-/*  任务中心 — 简单列表                                                */
-/* ================================================================== */
-
 function TaskCenterPage() {
+  const [searchParams] = useSearchParams()
+  const focusTaskId = searchParams.get("task")
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Record<string, boolean>>({})
+  const [resultSummaries, setResultSummaries] = useState<Record<string, TaskResultSummary>>({})
+  const [resultLoading, setResultLoading] = useState<Record<string, boolean>>({})
+  const [resultErrors, setResultErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
     let cancelled = false
+
     const load = async () => {
       try {
-        const list = await (await import("./api")).listTasks()
-        if (!cancelled) setTasks(list)
+        const list = await listTasks()
+        if (!cancelled) {
+          setTasks(
+            [...list].sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+            ),
+          )
+        }
       } catch {
-        // ignore
+        if (!cancelled) {
+          setTasks([])
+        }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
+
     load()
     const timer = setInterval(load, 5000)
     return () => {
@@ -390,66 +510,235 @@ function TaskCenterPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!focusTaskId) return
+    const focusedTask = tasks.find((task) => task.task_id === focusTaskId)
+    if (!focusedTask || !canViewResults(focusedTask.status)) return
+    setExpandedTaskIds((current) =>
+      current[focusTaskId] !== undefined ? current : { ...current, [focusTaskId]: true },
+    )
+  }, [focusTaskId, tasks])
+
+  useEffect(() => {
+    const taskIdsToLoad = tasks
+      .filter((task) => expandedTaskIds[task.task_id] && canViewResults(task.status))
+      .map((task) => task.task_id)
+      .filter((taskId) => !resultSummaries[taskId] && !resultLoading[taskId] && !resultErrors[taskId])
+
+    if (taskIdsToLoad.length === 0) return
+
+    taskIdsToLoad.forEach((taskId) => {
+      setResultLoading((current) => ({ ...current, [taskId]: true }))
+      getTaskResultFiles(taskId)
+        .then((summary) => {
+          setResultSummaries((current) => ({ ...current, [taskId]: summary }))
+        })
+        .catch(() => {
+          setResultErrors((current) => ({
+            ...current,
+            [taskId]: "结果信息暂时无法读取，请稍后再试。",
+          }))
+        })
+        .finally(() => {
+          setResultLoading((current) => ({ ...current, [taskId]: false }))
+        })
+    })
+  }, [expandedTaskIds, resultErrors, resultLoading, resultSummaries, tasks])
+
+  const toggleTask = (taskId: string) => {
+    setExpandedTaskIds((current) => ({ ...current, [taskId]: !current[taskId] }))
+  }
+
   return (
-    <div style={{ padding: "2rem", maxWidth: 800, margin: "0 auto" }}>
+    <div style={{ padding: "2rem", maxWidth: 860, margin: "0 auto" }}>
       <h2 style={{ marginTop: 0, color: "#333" }}>任务中心</h2>
 
-      {loading && <div style={{ color: "#888" }}>加载中…</div>}
+      {loading && <div style={{ color: "#888" }}>加载中...</div>}
 
       {!loading && tasks.length === 0 && (
         <div style={{ color: "#888", padding: "2rem 0", textAlign: "center" }}>
-          暂无任务，请前往「新建任务」开始。
+          暂无任务，请前往“新建任务”开始。
         </div>
       )}
 
-      {tasks.map((t) => (
-        <div
-          key={t.task_id}
-          style={{
-            padding: "12px 16px",
-            marginBottom: 8,
-            border: "1px solid #e0e0e0",
-            borderRadius: 8,
-            background: "#fafafa",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontWeight: 500 }}>{t.display_name}</span>
-            <span
+      {tasks.map((task) => {
+        const expanded = !!expandedTaskIds[task.task_id]
+        const summary = resultSummaries[task.task_id]
+        const isLoadingResults = !!resultLoading[task.task_id]
+        const resultError = resultErrors[task.task_id]
+        const showToggle = canViewResults(task.status)
+
+        return (
+          <div
+            key={task.task_id}
+            style={{
+              padding: "12px 16px",
+              marginBottom: 12,
+              border: "1px solid #e0e0e0",
+              borderRadius: 10,
+              background: focusTaskId === task.task_id ? "#f6fbff" : "#fafafa",
+            }}
+          >
+            <div
               style={{
-                fontSize: "0.8rem",
-                padding: "2px 10px",
-                borderRadius: 12,
-                background: `${STATUS_COLORS[t.status]}18`,
-                color: STATUS_COLORS[t.status],
-                border: `1px solid ${STATUS_COLORS[t.status]}40`,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
               }}
             >
-              {STATUS_LABELS[t.status]}
-            </span>
-          </div>
-          <div style={{ marginTop: 6, fontSize: "0.85rem", color: "#888" }}>
-            ID: <code>{t.task_id.slice(0, 12)}…</code> · Provider: {t.provider_profile_id}
-          </div>
-          {t.quality_rating && (
-            <div style={{ marginTop: 4, fontSize: "0.85rem", color: "#2e7d32" }}>
-              质量评分: {t.quality_rating}
+              <span style={{ fontWeight: 600 }}>{task.display_name}</span>
+              <span
+                style={{
+                  fontSize: "0.8rem",
+                  padding: "2px 10px",
+                  borderRadius: 12,
+                  background: `${STATUS_COLORS[task.status]}18`,
+                  color: STATUS_COLORS[task.status],
+                  border: `1px solid ${STATUS_COLORS[task.status]}40`,
+                }}
+              >
+                {STATUS_LABELS[task.status]}
+              </span>
             </div>
-          )}
-          {t.status === "succeeded" && (
-            <div style={{ marginTop: 4, fontSize: "0.85rem", color: "#666" }}>
-              输出: <code>{t.output_dir}</code>
+
+            <div style={{ marginTop: 6, fontSize: "0.85rem", color: "#666" }}>
+              ID: <code>{task.task_id.slice(0, 12)}...</code> · Provider: {task.provider_profile_id}
             </div>
-          )}
-        </div>
-      ))}
+
+            {task.quality_rating && (
+              <div style={{ marginTop: 4, fontSize: "0.85rem", color: "#2e7d32" }}>
+                质量评分: {task.quality_rating}
+              </div>
+            )}
+
+            {showToggle && (
+              <div style={{ marginTop: 10 }}>
+                <button
+                  onClick={() => toggleTask(task.task_id)}
+                  style={{
+                    padding: "6px 14px",
+                    fontSize: "0.9rem",
+                    color: "#1565c0",
+                    background: "#e3f2fd",
+                    border: "1px solid #90caf9",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                  }}
+                >
+                  {expanded ? "收起结果" : "查看结果"}
+                </button>
+              </div>
+            )}
+
+            {expanded && (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 14,
+                  borderRadius: 8,
+                  background: "#fff",
+                  border: "1px solid #dbe7f3",
+                }}
+              >
+                <div style={{ fontSize: "0.9rem", color: "#333", lineHeight: 1.7 }}>
+                  <div>
+                    <strong>任务状态：</strong>
+                    {STATUS_LABELS[task.status]}
+                  </div>
+                  <div>
+                    <strong>文件名：</strong>
+                    {task.display_name}
+                  </div>
+                  <div>
+                    <strong>页码范围：</strong>
+                    {formatPages(task.selected_pages)}
+                  </div>
+                  <div>
+                    <strong>创建时间：</strong>
+                    {formatDateTime(task.created_at)}
+                  </div>
+                  <div>
+                    <strong>输出目录：</strong>
+                    <code>{task.output_dir}</code>
+                  </div>
+                </div>
+
+                {isLoadingResults && (
+                  <div style={{ marginTop: 12, color: "#666", fontSize: "0.9rem" }}>
+                    正在读取结果文件信息...
+                  </div>
+                )}
+
+                {resultError && (
+                  <div style={{ marginTop: 12, color: "#c62828", fontSize: "0.9rem" }}>
+                    {resultError}
+                  </div>
+                )}
+
+                {summary && (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 10, color: "#333" }}>
+                      可下载结果
+                    </div>
+
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div
+                        style={{
+                          padding: 12,
+                          borderRadius: 8,
+                          background: "#f8fbff",
+                          border: "1px solid #d7e7f7",
+                        }}
+                      >
+                        <div style={{ marginBottom: 6, color: "#333" }}>
+                          <strong>result.docx</strong>
+                        </div>
+                        {summary.files.result_docx.exists ? (
+                          <a
+                            href={summary.files.result_docx.download_path ?? "#"}
+                            style={{ color: "#1565c0", textDecoration: "none", fontWeight: 500 }}
+                          >
+                            下载 result.docx
+                          </a>
+                        ) : (
+                          <div style={{ color: "#666" }}>本次任务暂未生成可下载结果文件</div>
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          padding: 12,
+                          borderRadius: 8,
+                          background: "#f8fbff",
+                          border: "1px solid #d7e7f7",
+                        }}
+                      >
+                        <div style={{ marginBottom: 6, color: "#333" }}>
+                          <strong>quality-report.docx</strong>
+                        </div>
+                        {summary.files.quality_report_docx.exists ? (
+                          <a
+                            href={summary.files.quality_report_docx.download_path ?? "#"}
+                            style={{ color: "#1565c0", textDecoration: "none", fontWeight: 500 }}
+                          >
+                            下载 quality-report.docx
+                          </a>
+                        ) : (
+                          <div style={{ color: "#666" }}>本次未生成质量报告</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
-
-/* ================================================================== */
-/*  设置 — Provider 配置                                              */
-/* ================================================================== */
 
 function SettingsPage() {
   const [providers, setProviders] = useState<ProviderView[]>([])
@@ -468,11 +757,11 @@ function SettingsPage() {
 
       <h3 style={{ color: "#555" }}>OCR Provider</h3>
 
-      {loading && <div style={{ color: "#888" }}>加载中…</div>}
+      {loading && <div style={{ color: "#888" }}>加载中...</div>}
 
-      {providers.map((p) => (
+      {providers.map((provider) => (
         <div
-          key={p.profile_id}
+          key={provider.profile_id}
           style={{
             padding: "12px 16px",
             marginBottom: 8,
@@ -482,37 +771,49 @@ function SettingsPage() {
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontWeight: 500 }}>{p.display_name}</span>
+            <span style={{ fontWeight: 500 }}>{provider.display_name}</span>
             <span
               style={{
                 fontSize: "0.8rem",
                 padding: "2px 10px",
                 borderRadius: 12,
-                background: p.credential.configured ? "#e6f7e6" : "#fde8e8",
-                color: p.credential.configured ? "#2e7d32" : "#c62828",
+                background: provider.credential.configured ? "#e6f7e6" : "#fde8e8",
+                color: provider.credential.configured ? "#2e7d32" : "#c62828",
               }}
             >
-              {p.credential.configured ? `✅ 已配置 ${p.credential.masked}` : "❌ 未配置 API Key"}
+              {provider.credential.configured
+                ? `已配置 ${provider.credential.masked}`
+                : "未配置 API Key"}
             </span>
           </div>
           <div style={{ marginTop: 6, fontSize: "0.85rem", color: "#888" }}>
-            ID: {p.profile_id} · 类型: {p.adapter_type}
+            ID: {provider.profile_id} · 类型: {provider.adapter_type}
           </div>
         </div>
       ))}
 
-      <div style={{ marginTop: 24, padding: 16, border: "1px solid #e0e0e0", borderRadius: 8, background: "#fff3cd" }}>
+      <div
+        style={{
+          marginTop: 24,
+          padding: 16,
+          border: "1px solid #e0e0e0",
+          borderRadius: 8,
+          background: "#fff3cd",
+        }}
+      >
         <strong style={{ color: "#856404" }}>如何配置 MinerU API Key</strong>
-        <pre style={{
-          marginTop: 8,
-          padding: 12,
-          background: "#fff",
-          border: "1px solid #ffe082",
-          borderRadius: 6,
-          fontSize: "0.8rem",
-          overflow: "auto",
-          whiteSpace: "pre-wrap",
-        }}>
+        <pre
+          style={{
+            marginTop: 8,
+            padding: 12,
+            background: "#fff",
+            border: "1px solid #ffe082",
+            borderRadius: 6,
+            fontSize: "0.8rem",
+            overflow: "auto",
+            whiteSpace: "pre-wrap",
+          }}
+        >
 {`# 启动后端后执行（替换 YOUR_API_KEY）
 curl -X POST http://127.0.0.1:8399/api/providers \\
   -H "X-GreatOCR-Token: greatocr-dev-token-2026" \\
@@ -525,16 +826,12 @@ curl -X POST http://127.0.0.1:8399/api/providers \\
   )
 }
 
-/* ================================================================== */
-/*  首页                                                                */
-/* ================================================================== */
-
 function HomePage() {
   return (
     <div style={{ padding: "3rem 2rem", textAlign: "center", color: "#666", fontSize: "1.1rem" }}>
       <h2 style={{ color: "#333" }}>欢迎使用 GreatOCR</h2>
       <p style={{ marginTop: "1rem", color: "#888" }}>
-        本地文档处理工具 — PDF 重建 · 图片增强 · 多语言翻译
+        本地文档处理工具：PDF 重建、OCR 处理与结果查看
       </p>
       <div style={{ marginTop: "2rem" }}>
         <Link
@@ -546,7 +843,6 @@ function HomePage() {
             fontWeight: 600,
             color: "#fff",
             background: "#1565c0",
-            border: "none",
             borderRadius: 6,
             textDecoration: "none",
           }}
@@ -558,11 +854,7 @@ function HomePage() {
   )
 }
 
-/* ================================================================== */
-/*  App shell                                                          */
-/* ================================================================== */
-
-const navLinkStyle: React.CSSProperties = {
+const navLinkStyle: CSSProperties = {
   textDecoration: "none",
   color: "#1565c0",
   fontWeight: 500,
@@ -570,7 +862,7 @@ const navLinkStyle: React.CSSProperties = {
   borderRadius: 6,
 }
 
-const headerStyle: React.CSSProperties = {
+const headerStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
@@ -579,22 +871,35 @@ const headerStyle: React.CSSProperties = {
   background: "#fafafa",
 }
 
-const navStyle: React.CSSProperties = {
+const navStyle: CSSProperties = {
   display: "flex",
   gap: "0.25rem",
 }
 
 export function App() {
   return (
-    <div style={{ minHeight: "100vh", fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+      }}
+    >
       <header style={headerStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <h1 style={{ margin: 0, fontSize: "1.25rem", color: "#333" }}>GreatOCR</h1>
           <nav style={navStyle}>
-            <Link to="/" style={navLinkStyle}>首页</Link>
-            <Link to="/tasks" style={navLinkStyle}>任务中心</Link>
-            <Link to="/new" style={navLinkStyle}>新建任务</Link>
-            <Link to="/settings" style={navLinkStyle}>设置</Link>
+            <Link to="/" style={navLinkStyle}>
+              首页
+            </Link>
+            <Link to="/tasks" style={navLinkStyle}>
+              任务中心
+            </Link>
+            <Link to="/new" style={navLinkStyle}>
+              新建任务
+            </Link>
+            <Link to="/settings" style={navLinkStyle}>
+              设置
+            </Link>
           </nav>
         </div>
         <HealthBadge />

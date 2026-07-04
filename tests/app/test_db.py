@@ -71,3 +71,17 @@ def test_database_initializes_explicit_schema_version(db: TaskDatabase) -> None:
         ).fetchone()
 
     assert version == (1,)
+
+
+def test_list_tasks_returns_latest_first(db: TaskDatabase) -> None:
+    first = db.create_task(
+        NewTask(source_path="C:/documents/first.pdf", pages=[1])
+    )
+    second = db.create_task(
+        NewTask(source_path="C:/documents/second.pdf", pages=[1])
+    )
+
+    rows = db.list_tasks()
+
+    assert rows[0].task_id == second.task_id
+    assert rows[1].task_id == first.task_id

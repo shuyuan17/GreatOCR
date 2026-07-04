@@ -40,12 +40,35 @@ class TaskService:
         source = Path(request.source_path)
         if not source.is_file():
             raise TaskServiceError("SOURCE_FILE_NOT_FOUND", status_code=404)
+        output_dir = self.resolve_output_dir(request.output_dir)
+        request = request.model_copy(
+            update={"output_dir": str(output_dir / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f"))}
+        )
         record = self.database.create_task(request)
         self.database.update_task_status(record.task_id, "paused")
         self._runtime_source_paths[record.task_id] = source
         updated = self.database.get_task(record.task_id)
         assert updated is not None
         return updated
+
+    def default_output_dir(self) -> Path:
+        path = self.database.path.parent / "data" / "exports"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def resolve_output_dir(self, raw_output_dir: str | None) -> Path:
+        output_root = Path(raw_output_dir) if raw_output_dir else self.default_output_dir()
+        if not output_root.exists():
+            raise TaskServiceError("OUTPUT_DIR_NOT_FOUND", status_code=422)
+        if not output_root.is_dir():
+            raise TaskServiceError("OUTPUT_DIR_NOT_DIRECTORY", status_code=422)
+        probe = output_root / ".greatocr-write-test"
+        try:
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+        except OSError as exc:
+            raise TaskServiceError("OUTPUT_DIR_NOT_WRITABLE", status_code=422) from exc
+        return output_root
 
     def get(self, task_id: str) -> TaskRecord:
         task = self.database.get_task(task_id)

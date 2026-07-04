@@ -93,7 +93,7 @@ class TaskDatabase:
     def list_tasks(self) -> list[TaskRecord]:
         with self._lock:
             rows = self._connection.execute(
-                "SELECT * FROM tasks ORDER BY rowid"
+                "SELECT * FROM tasks ORDER BY created_at DESC, rowid DESC"
             ).fetchall()
         return [self._task_from_row(row) for row in rows]
 

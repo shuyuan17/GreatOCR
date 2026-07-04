@@ -202,3 +202,122 @@ def test_upload_file_accepts_page_ranges(api) -> None:
 
     assert response.status_code == 201
     assert response.json()["task"]["selected_pages"] == [1, 2, 3, 5]
+
+
+def test_task_result_summary_reports_available_files(api) -> None:
+    client, database, _, tmp_path = api
+    task = create_task(client, make_pdf(tmp_path / "summary.pdf"), sensitive=False)
+    output_dir = Path(database.get_task(task["task_id"]).output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "result.docx").write_bytes(b"docx")
+
+    response = client.get(
+        f"/api/tasks/{task['task_id']}/result-files",
+        headers=headers(),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["task"]["task_id"] == task["task_id"]
+    assert payload["files"]["result_docx"]["exists"] is True
+    assert payload["files"]["result_docx"]["filename"] == "result.docx"
+    assert (
+        payload["files"]["result_docx"]["download_path"]
+        == f"/api/tasks/{task['task_id']}/download/result.docx"
+    )
+    assert payload["files"]["quality_report_docx"]["exists"] is False
+    assert payload["files"]["quality_report_docx"]["download_path"] is None
+
+
+def test_task_result_download_returns_standard_file(api) -> None:
+    client, database, _, tmp_path = api
+    task = create_task(client, make_pdf(tmp_path / "download.pdf"), sensitive=False)
+    output_dir = Path(database.get_task(task["task_id"]).output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "result.docx").write_bytes(b"docx")
+
+    response = client.get(
+        f"/api/tasks/{task['task_id']}/download/result.docx",
+        headers=headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"docx"
+    assert (
+        response.headers["content-disposition"]
+        == 'attachment; filename="result.docx"'
+    )
+
+
+def test_task_result_download_returns_not_found_for_missing_file(api) -> None:
+    client, _, _, tmp_path = api
+    task = create_task(client, make_pdf(tmp_path / "missing-download.pdf"), sensitive=False)
+
+    response = client.get(
+        f"/api/tasks/{task['task_id']}/download/quality-report.docx",
+        headers=headers(),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "RESULT_FILE_NOT_FOUND"
+
+
+def test_default_output_dir_uses_data_exports(api) -> None:
+    client, _, _, tmp_path = api
+
+    response = client.get("/api/tasks/default-output-dir", headers=headers())
+
+    assert response.status_code == 200
+    assert response.json()["output_dir"] == str(tmp_path / "data" / "exports")
+
+
+def test_upload_file_accepts_custom_output_dir(api) -> None:
+    client, _, _, tmp_path = api
+    source = make_pdf(tmp_path / "custom-output.pdf", pages=1)
+    custom_dir = tmp_path / "exports"
+    custom_dir.mkdir()
+
+    with source.open("rb") as stream:
+        response = client.post(
+            "/api/tasks/upload-file",
+            headers=headers(),
+            data={
+                "provider_profile_id": "mineru-default",
+                "output_dir": str(custom_dir),
+            },
+            files={"file": ("custom-output.pdf", stream, "application/pdf")},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["task"]["output_dir"].startswith(str(custom_dir))
+
+
+def test_upload_file_rejects_missing_output_dir(api) -> None:
+    client, _, _, tmp_path = api
+    source = make_pdf(tmp_path / "missing-output-dir.pdf", pages=1)
+
+    with source.open("rb") as stream:
+        response = client.post(
+            "/api/tasks/upload-file",
+            headers=headers(),
+            data={
+                "provider_profile_id": "mineru-default",
+                "output_dir": str(tmp_path / "does-not-exist"),
+            },
+            files={"file": ("missing-output-dir.pdf", stream, "application/pdf")},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "OUTPUT_DIR_NOT_FOUND"
+
+
+def test_list_tasks_returns_latest_first(api) -> None:
+    client, _, _, tmp_path = api
+    first = create_task(client, make_pdf(tmp_path / "first.pdf"), sensitive=False)
+    second = create_task(client, make_pdf(tmp_path / "second.pdf"), sensitive=False)
+
+    response = client.get("/api/tasks", headers=headers())
+
+    assert response.status_code == 200
+    assert response.json()[0]["task_id"] == second["task_id"]
+    assert response.json()[1]["task_id"] == first["task_id"]

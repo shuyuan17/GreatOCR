@@ -50,3 +50,25 @@ class TaskRecord(BaseModel):
     quality_rating: str | None = None
     requested_action: RequestedTaskAction | None = None
     created_at: str
+
+
+class TaskResultFileEntry(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    filename: str
+    exists: bool
+    download_path: str | None = None
+
+
+class TaskResultSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    task: TaskRecord
+    files: dict[str, TaskResultFileEntry]
+
+
+class DefaultOutputDirResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    output_dir: str
