@@ -1,102 +1,83 @@
 # GreatOCR
 
-GreatOCR 是一个本地 PDF 文档重建工具项目，目标是把 PDF 预检、OCR/解析、结构化映射、Word 重建、质量报告和后续本地图形界面逐步做成一个可在 Windows 10/11 使用的交付版本。
+GreatOCR 是一个面向 Windows 的本地 OCR 文档重建工具，目标是把 PDF 预检、选页、OCR、结构化映射、DOCX 重建和质量报告整合成可稳定使用的桌面化工作流。
 
-## 当前状态
+当前发布版本：`v2.3.0`
 
-- 主线 `main` 已完成 V2.2，当前可稳定使用的能力以 CLI 和重建引擎为主
-- V2.3 本地 Web 界面正在独立工作树中推进：
-  - 工作树目录：`D:\codeprojects\codex-workspace\GreatOCR\.worktrees\v2-3-local-web-app`
-  - 当前阶段：**V2.3 RC1 validation PASSED** — 完整流程（上传→选页→OCR→查看结果→打开输出→删除）已验证通过
-  - 支持 fake provider（离线测试）和 MinerU（需配置 API Key）
-- V2.3 验证报告：[docs/reports/v2.3-rc1-validation.md](docs/reports/v2.3-rc1-validation.md)
-- V2.4 便携打包与发布验收尚未开始
+## 主要功能
 
-更详细状态请看：
+- PDF 预检：页数、加密状态、页面类型识别
+- OCR 任务流：上传文件、选定页码范围、启动任务、查看状态
+- Provider 管理：内置 `fake-default` 离线测试链路，支持配置 MinerU
+- 结果输出：生成 `result.docx`，可选生成 `quality-report.docx`
+- 任务中心：结果查看、下载、打开输出目录、删除记录、批量删除
+- 设置中心：Provider 配置、连接测试、常用 OCR/输出偏好设置
+- 安全控制：敏感文件模式、Provider 使用约束、凭证本地保存
 
-- [PROJECT_STATUS.md](PROJECT_STATUS.md)
-- [docs/TASK_BOARD.md](/D:/codeprojects/codex-workspace/GreatOCR/.worktrees/v2-3-local-web-app/docs/TASK_BOARD.md)
+## Quick Start
 
-## 仓库结构
-
-- `src/`：核心引擎、CLI、后端应用代码
-- `frontend/`：React + Vite 前端应用
-- `scripts/`：启动脚本等工具
-- `tests/`：自动化测试
-- `data/`：运行时数据（SQLite、上传文件、缩略图缓存）— 首次启动自动创建
-- `docs/`：文档、任务看板
-- `releases/`：发布相关材料
-- `.worktrees/v2-3-local-web-app/`：V2.3 本地 Web 应用独立工作树
-
-## 如何启动（V2.3 本地 Web 应用）
-
-### 前置条件
-
-确保已安装 Python 虚拟环境依赖：
+### 1. 安装后端依赖
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
-### 一键启动（推荐）
+### 2. 启动后端
 
 ```powershell
-PYTHONIOENCODING=utf-8 .\.venv\Scripts\python.exe scripts\serve.py
+.\.venv\Scripts\python.exe scripts\serve.py
 ```
 
-> **注意**：在 Windows Git Bash 中，如果遇到 `UnicodeEncodeError` 报错，请设置 `PYTHONIOENCODING=utf-8` 环境变量。
+后端默认启动在 `http://127.0.0.1:8399`。
 
-首次启动会自动：
-1. 创建 `data/` 目录（含 SQLite 数据库、上传目录、缩略图缓存）
-2. 创建 `fake-default` provider（离线测试用，无需 API Key）
-3. 在 `http://127.0.0.1:8399` 启动 FastAPI 后端
+首次启动会自动完成：
 
-### 启动前端（另一个终端）
+- 创建本地数据目录和 SQLite 数据库
+- 写入 `fake-default` provider
+- 初始化默认偏好设置
+
+### 3. 启动前端
 
 ```powershell
-cd .\frontend\
+cd frontend
 npx pnpm install
 npx pnpm dev
 ```
 
-前端默认在 `http://127.0.0.1:5173` 启动，Vite 自动将 `/api/*` 请求代理到后端。
+前端默认启动在 `http://127.0.0.1:5173`。
 
-### 访问应用
+### 4. 开始使用
 
-打开浏览器访问 `http://127.0.0.1:5173`。
+- 打开浏览器访问 `http://127.0.0.1:5173`
+- 进入“新建任务”上传 PDF
+- 选择 `fake-default` 可直接体验完整离线流程
+- 如需真实 OCR，可在“设置”中配置 MinerU
 
-### 配置 MinerU API Key（可选）
+## 项目结构
 
-如需使用真实 MinerU OCR，请在后端启动后执行：
+- `src/`：核心引擎、CLI、FastAPI 后端
+- `frontend/`：React + Vite 前端
+- `scripts/`：启动与辅助脚本
+- `tests/`：自动化测试
+- `docs/`：项目文档与报告
+- `releases/`：发布相关材料
 
-```powershell
-curl -X POST http://127.0.0.1:8399/api/providers `
-  -H "X-GreatOCR-Token: greatocr-dev-token-2026" `
-  -H "X-GreatOCR-Provider-Key: 你的MinerU_API_Key" `
-  -H "Content-Type: application/json" `
-  -d '{"profile_id":"mineru-default","display_name":"MinerU","adapter_type":"mineru","endpoint":"https://mineru.net","public":true,"capabilities":{"tables":true,"images":true}}'
-```
+## Roadmap
 
-## 主线如何启动
+### V2.4
 
-```powershell
-# 常用检查命令
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -m greatocr.cli doctor
-.\.venv\Scripts\python.exe -m greatocr.cli convert <你的PDF路径> --dry-run
-```
+- Windows Packaging
+- OCR 识别质量优化
+- 版式恢复优化
+- 多 Provider 管理能力增强
+- Settings 重构
+- 批量 OCR 与更多导出格式
 
-## 协作与文档
+## Known Limitations
 
-开始任何任务前，建议先阅读：
-
-1. [README.md](README.md)
-2. [PROJECT_STATUS.md](PROJECT_STATUS.md)
-3. [docs/AGENT_GUIDE.md](/D:/codeprojects/codex-workspace/GreatOCR/.worktrees/v2-3-local-web-app/docs/AGENT_GUIDE.md)
-4. [docs/TASK_BOARD.md](/D:/codeprojects/codex-workspace/GreatOCR/.worktrees/v2-3-local-web-app/docs/TASK_BOARD.md)
-
-## 注意事项
-
-- 不要读取、打印或提交根目录中的 `MinerU API key.txt`
-- 不要直接在 `main` 上开发新功能
-- 优先保证"可以运行、可以测试、可以提交"，再考虑美化和重构
+- 当前开发态运行仍需分别启动后端和前端
+- Windows 打包版尚未完成，属于 V2.4 范围
+- OCR 质量仍可能出现单词粘连、数字格式不一致等问题
+- 复杂版式恢复仍有优化空间，尤其是未知块类型和分页漂移
+- 印章/签字识别尚未实现
+- 当前导出格式以 DOCX 和质量报告为主
