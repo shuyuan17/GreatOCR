@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from greatocr.app.schemas import NewTask, TaskRecord
 from greatocr.app.services.task_service import TaskService, TaskServiceError
 from greatocr.ingest.preflight import InvalidPdfError, run_preflight
+from greatocr.selection.page_ranges import PageRangeError, parse_page_ranges
 
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -203,18 +204,29 @@ async def upload_and_create_task(
     content = await file.read()
     save_path.write_bytes(content)
 
-    # 解析页码
+    preflight = None
     parsed_pages: list[int] = []
     if pages and pages.strip():
-        for p in pages.split(","):
-            p = p.strip()
-            if p:
-                parsed_pages.append(int(p))
+        try:
+            preflight = run_preflight(save_path)
+        except InvalidPdfError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "PAGE_RANGE_REQUIRES_PDF"},
+            ) from exc
+        try:
+            parsed_pages = parse_page_ranges(pages, preflight.page_count).pages
+        except PageRangeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "INVALID_PAGE_RANGE", "message": str(exc)},
+            ) from exc
 
     # 如果未指定页面，尝试预检获取总页数（仅 PDF）
     if not parsed_pages:
         try:
-            preflight = run_preflight(save_path)
+            if preflight is None:
+                preflight = run_preflight(save_path)
             if not preflight.encrypted:
                 parsed_pages = list(range(1, preflight.page_count + 1))
         except InvalidPdfError:

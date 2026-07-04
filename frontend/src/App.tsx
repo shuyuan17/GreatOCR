@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, Route, Routes, useNavigate } from "react-router-dom"
 import { apiFetch, getTask, listProviders, startTask, uploadFile, type ProviderView, type TaskRecord, type TaskStatus } from "./api"
+import { isPdfFile, validatePageRange } from "./pageRanges"
 
 /* ================================================================== */
 /*  Health check badge                                                 */
@@ -117,10 +118,13 @@ function NewTaskPage() {
   const [file, setFile] = useState<File | null>(null)
   const [providers, setProviders] = useState<ProviderView[]>([])
   const [selectedProvider, setSelectedProvider] = useState("fake-default")
+  const [pageRange, setPageRange] = useState("")
   const [phase, setPhase] = useState<"idle" | "uploading" | "starting" | "running" | "done" | "error">("idle")
   const [task, setTask] = useState<TaskRecord | null>(null)
   const [errorMsg, setErrorMsg] = useState("")
   const [progressMsg, setProgressMsg] = useState("")
+  const pageRangeError = validatePageRange(pageRange)
+  const pdfSelected = isPdfFile(file)
 
   // 加载 Provider 列表
   useEffect(() => {
@@ -161,6 +165,14 @@ function NewTaskPage() {
 
   const handleSubmit = async () => {
     if (!file) return
+    if (pageRange.trim() && !pdfSelected) {
+      setErrorMsg("只有 PDF 支持页码范围")
+      return
+    }
+    if (pageRangeError) {
+      setErrorMsg(pageRangeError)
+      return
+    }
 
     setPhase("uploading")
     setErrorMsg("")
@@ -170,6 +182,7 @@ function NewTaskPage() {
       // 1. 上传文件 → 创建任务
       const result = await uploadFile(file, {
         providerProfileId: selectedProvider,
+        pages: pdfSelected ? pageRange : "",
       })
       setTask(result.task)
       setProgressMsg("文件已上传，正在启动 OCR…")
@@ -210,10 +223,19 @@ function NewTaskPage() {
           选择文件（图片或 PDF）
         </label>
         <input
+          id="source-file"
+          aria-label="选择文件（图片或 PDF）"
           ref={fileRef}
           type="file"
           accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif,.bmp"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          onChange={(e) => {
+            const nextFile = e.target.files?.[0] ?? null
+            setFile(nextFile)
+            setErrorMsg("")
+            if (!isPdfFile(nextFile)) {
+              setPageRange("")
+            }
+          }}
           disabled={phase !== "idle"}
           style={{ fontSize: "0.95rem" }}
         />
@@ -224,12 +246,36 @@ function NewTaskPage() {
         )}
       </div>
 
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}>
+          页码范围
+        </label>
+        <input
+          id="page-range"
+          aria-label="页码范围"
+          type="text"
+          value={pageRange}
+          onChange={(e) => {
+            setPageRange(e.target.value)
+            setErrorMsg("")
+          }}
+          disabled={phase !== "idle" || !pdfSelected}
+          placeholder="留空处理全部页面；示例：1-3,5,7-9"
+          style={{ width: "100%", fontSize: "0.95rem", padding: "8px 10px", boxSizing: "border-box" }}
+        />
+        <div style={{ marginTop: 6, fontSize: "0.8rem", color: pageRangeError ? "#c62828" : "#666" }}>
+          {pageRangeError || (pdfSelected ? "支持 1、1-3、1,3,5、1-3,5,7-9；留空表示全部页面" : "仅 PDF 支持页码范围")}
+        </div>
+      </div>
+
       {/* Provider 选择 */}
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}>
           OCR Provider
         </label>
         <select
+          id="provider-select"
+          aria-label="OCR Provider"
           value={selectedProvider}
           onChange={(e) => setSelectedProvider(e.target.value)}
           disabled={phase !== "idle"}

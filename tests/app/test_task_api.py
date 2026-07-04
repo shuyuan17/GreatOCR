@@ -53,6 +53,7 @@ def api(tmp_path: Path):
         database=database,
         credential_service=credentials,
         task_service=service,
+        upload_dir=tmp_path / "uploads",
     )
     client = TestClient(app)
     yield client, database, opened, tmp_path
@@ -182,3 +183,22 @@ def test_task_list_and_detail_do_not_expose_sensitive_source_path(api) -> None:
     assert detail.json()["source_path"] is None
     assert listed.json()[0]["source_path"] is None
     assert "client-secret.pdf" not in detail.text
+
+
+def test_upload_file_accepts_page_ranges(api) -> None:
+    client, _, _, tmp_path = api
+    source = make_pdf(tmp_path / "range-upload.pdf", pages=5)
+
+    with source.open("rb") as stream:
+        response = client.post(
+            "/api/tasks/upload-file",
+            headers=headers(),
+            data={
+                "provider_profile_id": "mineru-default",
+                "pages": "1-3,5",
+            },
+            files={"file": ("range-upload.pdf", stream, "application/pdf")},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["task"]["selected_pages"] == [1, 2, 3, 5]

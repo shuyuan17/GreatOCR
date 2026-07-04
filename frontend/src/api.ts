@@ -82,6 +82,7 @@ export async function uploadFile(
   opts?: {
     sensitive?: boolean
     providerProfileId?: string
+    pages?: string
   },
 ): Promise<UploadResult> {
   const form = new FormData()
@@ -89,6 +90,7 @@ export async function uploadFile(
   if (opts?.sensitive) form.append("sensitive", "true")
   if (opts?.providerProfileId)
     form.append("provider_profile_id", opts.providerProfileId)
+  if (opts?.pages?.trim()) form.append("pages", opts.pages.trim())
 
   const res = await apiFetch("/tasks/upload-file", {
     method: "POST",
