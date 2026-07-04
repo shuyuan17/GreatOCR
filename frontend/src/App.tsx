@@ -2,11 +2,13 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 import { Link, Route, Routes, useNavigate, useSearchParams } from "react-router-dom"
 import {
   apiFetch,
+  deleteTask,
   getDefaultOutputDir,
   getTask,
   getTaskResultFiles,
   listProviders,
   listTasks,
+  openOutput,
   startTask,
   uploadFile,
   type ProviderView,
@@ -477,6 +479,8 @@ function TaskCenterPage() {
   const [resultSummaries, setResultSummaries] = useState<Record<string, TaskResultSummary>>({})
   const [resultLoading, setResultLoading] = useState<Record<string, boolean>>({})
   const [resultErrors, setResultErrors] = useState<Record<string, string>>({})
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -547,6 +551,45 @@ function TaskCenterPage() {
 
   const toggleTask = (taskId: string) => {
     setExpandedTaskIds((current) => ({ ...current, [taskId]: !current[taskId] }))
+  }
+
+  const handleDelete = async (taskId: string) => {
+    try {
+      await deleteTask(taskId)
+      setTasks((current) => current.filter((t) => t.task_id !== taskId))
+      setExpandedTaskIds((current) => {
+        const next = { ...current }
+        delete next[taskId]
+        return next
+      })
+      setResultSummaries((current) => {
+        const next = { ...current }
+        delete next[taskId]
+        return next
+      })
+    } catch {
+      alert("删除任务失败，请稍后重试。")
+    } finally {
+      setDeleteConfirmId(null)
+    }
+  }
+
+  const handleCopyPath = async (path: string) => {
+    try {
+      await navigator.clipboard.writeText(path)
+      setCopyFeedback(path)
+      setTimeout(() => setCopyFeedback(null), 2000)
+    } catch {
+      alert("复制失败，请手动复制。")
+    }
+  }
+
+  const handleOpenOutput = async (taskId: string) => {
+    try {
+      await openOutput(taskId)
+    } catch {
+      // 静默处理：文件管理器已打开或出错
+    }
   }
 
   return (
@@ -658,11 +701,110 @@ function TaskCenterPage() {
                     <strong>创建时间：</strong>
                     {formatDateTime(task.created_at)}
                   </div>
+                  {task.completed_at && (
+                    <div>
+                      <strong>完成时间：</strong>
+                      {formatDateTime(task.completed_at)}
+                    </div>
+                  )}
                   <div>
                     <strong>输出目录：</strong>
                     <code>{task.output_dir}</code>
                   </div>
                 </div>
+
+                <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => handleCopyPath(task.output_dir)}
+                    style={{
+                      padding: "6px 14px",
+                      fontSize: "0.85rem",
+                      color: copyFeedback === task.output_dir ? "#2e7d32" : "#1565c0",
+                      background: copyFeedback === task.output_dir ? "#e6f7e6" : "#e3f2fd",
+                      border: `1px solid ${copyFeedback === task.output_dir ? "#a5d6a7" : "#90caf9"}`,
+                      borderRadius: 6,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {copyFeedback === task.output_dir ? "✅ 已复制" : "复制输出路径"}
+                  </button>
+                  <button
+                    onClick={() => handleOpenOutput(task.task_id)}
+                    style={{
+                      padding: "6px 14px",
+                      fontSize: "0.85rem",
+                      color: "#1565c0",
+                      background: "#e3f2fd",
+                      border: "1px solid #90caf9",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                    }}
+                  >
+                    打开输出文件夹
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirmId(task.task_id)}
+                    style={{
+                      padding: "6px 14px",
+                      fontSize: "0.85rem",
+                      color: "#c62828",
+                      background: "#fde8e8",
+                      border: "1px solid #ef9a9a",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                    }}
+                  >
+                    删除任务
+                  </button>
+                </div>
+
+                {deleteConfirmId === task.task_id && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: "10px 14px",
+                      borderRadius: 8,
+                      background: "#fff3cd",
+                      border: "1px solid #ffe082",
+                      fontSize: "0.9rem",
+                      color: "#856404",
+                    }}
+                  >
+                    <div style={{ marginBottom: 8 }}>
+                      ⚠️ 确认删除此任务记录？仅删除记录，不会删除输出文件。
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={() => handleDelete(task.task_id)}
+                        style={{
+                          padding: "6px 16px",
+                          fontSize: "0.9rem",
+                          color: "#fff",
+                          background: "#c62828",
+                          border: "none",
+                          borderRadius: 6,
+                          cursor: "pointer",
+                        }}
+                      >
+                        确认删除
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirmId(null)}
+                        style={{
+                          padding: "6px 16px",
+                          fontSize: "0.9rem",
+                          color: "#333",
+                          background: "#fff",
+                          border: "1px solid #ccc",
+                          borderRadius: 6,
+                          cursor: "pointer",
+                        }}
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {isLoadingResults && (
                   <div style={{ marginTop: 12, color: "#666", fontSize: "0.9rem" }}>

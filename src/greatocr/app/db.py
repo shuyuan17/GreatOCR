@@ -18,7 +18,7 @@ from greatocr.app.schemas import (
 )
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class TaskDatabase:
@@ -62,8 +62,8 @@ class TaskDatabase:
                 INSERT INTO tasks (
                     task_id, display_name, source_path, sensitive, selected_pages,
                     provider_profile_id, approved_fallback_ids, status, output_dir,
-                    quality_rating, requested_action, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    quality_rating, requested_action, created_at, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.task_id,
@@ -78,6 +78,7 @@ class TaskDatabase:
                     record.quality_rating,
                     record.requested_action,
                     record.created_at,
+                    None,  # completed_at
                 ),
             )
         return record
@@ -102,6 +103,27 @@ class TaskDatabase:
             cursor = self._connection.execute(
                 "UPDATE tasks SET status = ? WHERE task_id = ?",
                 (status, task_id),
+            )
+        if cursor.rowcount != 1:
+            raise KeyError(task_id)
+
+    def complete_task(self, task_id: str, status: TaskStatus) -> None:
+        """更新任务状态并设置 completed_at 为当前时间。"""
+        completed_at = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                "UPDATE tasks SET status = ?, completed_at = ? WHERE task_id = ?",
+                (status, completed_at, task_id),
+            )
+        if cursor.rowcount != 1:
+            raise KeyError(task_id)
+
+    def delete_task(self, task_id: str) -> None:
+        """从数据库中删除任务记录。不影响输出文件和原始文件。"""
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM tasks WHERE task_id = ?",
+                (task_id,),
             )
         if cursor.rowcount != 1:
             raise KeyError(task_id)
@@ -274,7 +296,8 @@ class TaskDatabase:
                     output_dir TEXT NOT NULL,
                     quality_rating TEXT,
                     requested_action TEXT,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS provider_profiles (
@@ -297,9 +320,24 @@ class TaskDatabase:
                     (SCHEMA_VERSION,),
                 )
             elif int(row["version"]) != SCHEMA_VERSION:
-                raise RuntimeError(
-                    f"Unsupported database schema version: {row['version']}"
-                )
+                current_version = int(row["version"])
+                if current_version == 1 and SCHEMA_VERSION == 2:
+                    self._migrate_v1_to_v2()
+                else:
+                    raise RuntimeError(
+                        f"Unsupported database schema version: {current_version}"
+                    )
+
+    def _migrate_v1_to_v2(self) -> None:
+        """从 schema v1 升级到 v2：添加 completed_at 列。"""
+        with self._lock, self._connection:
+            self._connection.execute(
+                "ALTER TABLE tasks ADD COLUMN completed_at TEXT"
+            )
+            self._connection.execute(
+                "UPDATE schema_version SET version = ?",
+                (SCHEMA_VERSION,),
+            )
 
     @staticmethod
     def _task_from_row(row: sqlite3.Row) -> TaskRecord:
@@ -316,6 +354,7 @@ class TaskDatabase:
             quality_rating=row["quality_rating"],
             requested_action=row["requested_action"],
             created_at=row["created_at"],
+            completed_at=row["completed_at"],
         )
 
     @staticmethod

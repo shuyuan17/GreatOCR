@@ -50,6 +50,7 @@ class TaskRecord(BaseModel):
     quality_rating: str | None = None
     requested_action: RequestedTaskAction | None = None
     created_at: str
+    completed_at: str | None = None
 
 
 class TaskResultFileEntry(BaseModel):

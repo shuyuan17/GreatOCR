@@ -171,6 +171,11 @@ class TaskService:
         output_dir.mkdir(parents=True, exist_ok=True)
         self.output_opener(output_dir)
 
+    def delete(self, task_id: str) -> None:
+        """删除任务记录。不会删除输出文件或原始文件。"""
+        self.get(task_id)  # 确认任务存在（不存在则抛 404）
+        self.database.delete_task(task_id)
+
     def _source_path(self, task_id: str) -> Path:
         task = self.get(task_id)
         source = self._runtime_source_paths.get(task_id)

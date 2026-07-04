@@ -166,6 +166,13 @@ def open_task_output(task_id: str, request: Request) -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.delete("/{task_id}")
+def delete_task(task_id: str, request: Request) -> dict[str, str]:
+    """删除任务记录。不会删除输出文件或原始文件。"""
+    _run(lambda: _service(request).delete(task_id))
+    return {"status": "ok", "task_id": task_id}
+
+
 @router.get("/{task_id}/result-files")
 def task_result_files(task_id: str, request: Request) -> TaskResultSummary:
     task = _run(lambda: _service(request).get(task_id))

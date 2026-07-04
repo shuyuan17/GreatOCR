@@ -32,7 +32,7 @@ class SerialWorker:
             raise ValueError("finished task must leave the active queue state")
         if self._active_task_id != task_id:
             raise ValueError("task is not active in this worker")
-        self.database.update_task_status(task_id, status)
+        self.database.complete_task(task_id, status)
         self._active_task_id = None
 
     def checkpoint(self, task_id: str) -> TaskRecord:

@@ -50,6 +50,7 @@ export interface TaskRecord {
   quality_rating: string | null
   requested_action: string | null
   created_at: string
+  completed_at: string | null
 }
 
 export interface TaskResultFileEntry {
@@ -167,6 +168,20 @@ export async function getTaskResultFiles(taskId: string): Promise<TaskResultSumm
     throw new Error(`获取结果文件失败 (${res.status})`)
   }
   return res.json()
+}
+
+export async function deleteTask(taskId: string): Promise<void> {
+  const res = await apiFetch(`/tasks/${taskId}`, { method: "DELETE" })
+  if (!res.ok) {
+    throw new Error(`删除任务失败 (${res.status})`)
+  }
+}
+
+export async function openOutput(taskId: string): Promise<void> {
+  const res = await apiFetch(`/tasks/${taskId}/open-output`, { method: "POST" })
+  if (!res.ok) {
+    throw new Error(`打开输出目录失败 (${res.status})`)
+  }
 }
 
 export async function listProviders(): Promise<ProviderView[]> {
