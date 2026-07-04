@@ -2,6 +2,8 @@
 
 最后更新：2026-07-04
 
+**V2.3 RC1 validation PASSED** ✅ — 详见 [docs/reports/v2.3-rc1-validation.md](./docs/reports/v2.3-rc1-validation.md)
+
 ## 当前项目目标是什么
 
 GreatOCR 当前的总体目标是把一个本地 PDF 重建引擎逐步做成可在 Windows 10/11 使用的文档恢复工具：
