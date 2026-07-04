@@ -230,7 +230,7 @@ export async function uploadFile(
 export async function getDefaultOutputDir(): Promise<DefaultOutputDirResponse> {
   const res = await apiFetch("/tasks/default-output-dir")
   if (!res.ok) {
-    throw new Error(`鑾峰彇榛樿杈撳嚭鐩綍澶辫触 (${res.status})`)
+    throw new Error(`获取默认输出目录失败 (${res.status})`)
   }
   return res.json()
 }

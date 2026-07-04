@@ -57,9 +57,32 @@ def _service(request: Request) -> TaskService:
     if service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": "TASK_SERVICE_UNAVAILABLE"},
+            detail={
+                "code": "TASK_SERVICE_UNAVAILABLE",
+                "message": "任务服务不可用，请检查后端状态",
+            },
         )
     return service
+
+
+ERROR_MESSAGES: dict[str, str] = {
+    "SOURCE_FILE_NOT_FOUND": "源文件未找到，请确认文件未被移动或删除",
+    "OUTPUT_DIR_NOT_FOUND": "指定的输出目录不存在",
+    "OUTPUT_DIR_NOT_DIRECTORY": "指定的输出路径不是一个目录",
+    "OUTPUT_DIR_NOT_WRITABLE": "输出目录不可写，请检查权限",
+    "TASK_NOT_FOUND": "任务未找到，请刷新后重试",
+    "ENCRYPTED_PDF_NOT_SUPPORTED": "暂不支持加密的 PDF 文件",
+    "INVALID_THUMBNAIL_WINDOW": "缩略图页码范围无效",
+    "PROVIDER_NOT_FOUND": "OCR Provider 未找到",
+    "CREDENTIAL_NOT_CONFIGURED": "当前 Provider 未配置 API Key，请前往设置中完成配置",
+    "INVALID_PAGE_SELECTION": "页码范围无效，请重新选择",
+    "SENSITIVE_CONFIRMATION_REQUIRED": "敏感文件需要额外确认才能提交",
+    "INVALID_RETRY_PAGES": "指定的重试页数无效",
+    "SENSITIVE_SOURCE_REATTACH_REQUIRED": "敏感文件需要重新关联源文件",
+    "UPLOAD_DIR_NOT_CONFIGURED": "上传目录未配置，请联系系统管理员",
+    "PAGE_RANGE_REQUIRES_PDF": "只有 PDF 文件支持页码范围",
+    "RESULT_FILE_NOT_FOUND": "结果文件未找到，可能尚未生成或已被删除",
+}
 
 
 def _run(action):
@@ -68,7 +91,10 @@ def _run(action):
     except TaskServiceError as exc:
         raise HTTPException(
             status_code=exc.status_code,
-            detail={"code": exc.code},
+            detail={
+                "code": exc.code,
+                "message": ERROR_MESSAGES.get(exc.code, exc.code),
+            },
         ) from exc
 
 
@@ -210,13 +236,13 @@ def download_task_result(task_id: str, filename: str, request: Request) -> FileR
     if filename not in RESULT_FILES.values():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "RESULT_FILE_NOT_FOUND"},
+            detail={"code": "RESULT_FILE_NOT_FOUND", "message": "结果文件未找到，可能尚未生成或已被删除"},
         )
     target = Path(task.output_dir) / filename
     if not target.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "RESULT_FILE_NOT_FOUND"},
+            detail={"code": "RESULT_FILE_NOT_FOUND", "message": "结果文件未找到，可能尚未生成或已被删除"},
         )
     return FileResponse(target, filename=filename)
 
@@ -261,7 +287,7 @@ async def upload_and_create_task(
     if upload_dir is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "UPLOAD_DIR_NOT_CONFIGURED"},
+            detail={"code": "UPLOAD_DIR_NOT_CONFIGURED", "message": "上传目录未配置"},
         )
 
     # 校验文件名，防止路径穿越
@@ -287,7 +313,7 @@ async def upload_and_create_task(
         except InvalidPdfError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "PAGE_RANGE_REQUIRES_PDF"},
+                detail={"code": "PAGE_RANGE_REQUIRES_PDF", "message": "只有 PDF 文件支持页码范围"},
             ) from exc
         try:
             parsed_pages = parse_page_ranges(pages, preflight.page_count).pages

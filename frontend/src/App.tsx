@@ -83,6 +83,7 @@ function HealthBadge() {
 
   useEffect(() => {
     let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
 
     const check = async () => {
       try {
@@ -113,31 +114,89 @@ function HealthBadge() {
     }
 
     check()
+
     return () => {
       cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
     }
   }, [])
+
+  const handleRetry = () => {
+    setState("loading")
+    setLabel("正在重试连接...")
+    // 通过短暂延迟再检查，让用户看到重试状态
+    setTimeout(() => {
+      apiFetch("/health")
+        .then(async (res) => {
+          if (res.ok) {
+            const data: { status: string } = await res.json()
+            if (data.status === "ok") {
+              setState("ok")
+              setLabel("后端已连接")
+            } else {
+              setState("error")
+              setLabel(`后端异常: ${data.status}`)
+            }
+          } else {
+            setState("error")
+            setLabel(`后端错误 (${res.status})`)
+          }
+        })
+        .catch(() => {
+          setState("error")
+          setLabel("无法连接后端")
+        })
+    }, 500)
+  }
 
   const indicator = state === "loading" ? "⏳" : state === "ok" ? "✅" : "❌"
 
   return (
-    <span
-      style={{
-        fontSize: "0.8rem",
-        padding: "2px 10px",
-        borderRadius: 12,
-        background: state === "ok" ? "#e6f7e6" : state === "error" ? "#fde8e8" : "#fff3cd",
-        color: state === "ok" ? "#2e7d32" : state === "error" ? "#c62828" : "#856404",
-        border: `1px solid ${
-          state === "ok" ? "#a5d6a7" : state === "error" ? "#ef9a9a" : "#ffe082"
-        }`,
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-      }}
-    >
-      {indicator} {label}
-    </span>
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span
+        style={{
+          fontSize: "0.8rem",
+          padding: "2px 10px",
+          borderRadius: 12,
+          background: state === "ok" ? "#e6f7e6" : state === "error" ? "#fde8e8" : "#fff3cd",
+          color: state === "ok" ? "#2e7d32" : state === "error" ? "#c62828" : "#856404",
+          border: `1px solid ${
+            state === "ok" ? "#a5d6a7" : state === "error" ? "#ef9a9a" : "#ffe082"
+          }`,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+        }}
+      >
+        {indicator} {label}
+      </span>
+      {state === "error" && (
+        <button
+          onClick={handleRetry}
+          title="重试连接后端"
+          style={{
+            fontSize: "0.75rem",
+            padding: "2px 10px",
+            color: "#1565c0",
+            background: "#e3f2fd",
+            border: "1px solid #90caf9",
+            borderRadius: 12,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          重试
+        </button>
+      )}
+      {state === "error" && (
+        <span
+          style={{ fontSize: "0.75rem", color: "#888", cursor: "default" }}
+          title="确保后端已启动（在终端运行 serve.py）"
+        >
+          ⓘ
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -607,7 +666,7 @@ function TaskCenterPage() {
     try {
       await openOutput(taskId)
     } catch {
-      // 静默处理
+      alert("打开输出文件夹失败，请检查输出目录是否存在。")
     }
   }
 
@@ -900,34 +959,56 @@ function TaskCenterPage() {
                               {isResultLoading && (
                                 <span style={{ fontSize: "0.75rem", color: "#999" }}>加载中</span>
                               )}
-                              {summary?.files.result_docx.exists && (
+                              {summary?.files.result_docx.exists && summary.files.result_docx.download_path ? (
                                 <a
-                                  href={summary.files.result_docx.download_path ?? "#"}
+                                  href={summary.files.result_docx.download_path}
                                   style={{
-                                    fontSize: "0.75rem",
-                                    color: "#999",
-                                    textDecoration: "none",
+                                    fontSize: "0.85rem",
+                                    color: "#1565c0",
+                                    textDecoration: "underline",
                                     padding: "0 4px",
                                   }}
                                   title="下载 result.docx"
                                 >
                                   结果
                                 </a>
-                              )}
-                              {summary?.files.quality_report_docx.exists && (
-                                <a
-                                  href={summary.files.quality_report_docx.download_path ?? "#"}
+                              ) : summary?.files.result_docx.exists ? (
+                                <span
                                   style={{
-                                    fontSize: "0.75rem",
+                                    fontSize: "0.8rem",
                                     color: "#999",
-                                    textDecoration: "none",
+                                    padding: "0 4px",
+                                  }}
+                                  title="文件暂不可下载"
+                                >
+                                  结果
+                                </span>
+                              ) : null}
+                              {summary?.files.quality_report_docx.exists && summary.files.quality_report_docx.download_path ? (
+                                <a
+                                  href={summary.files.quality_report_docx.download_path}
+                                  style={{
+                                    fontSize: "0.85rem",
+                                    color: "#1565c0",
+                                    textDecoration: "underline",
                                     padding: "0 4px",
                                   }}
                                   title="下载 quality-report.docx"
                                 >
                                   报告
                                 </a>
-                              )}
+                              ) : summary?.files.quality_report_docx.exists ? (
+                                <span
+                                  style={{
+                                    fontSize: "0.8rem",
+                                    color: "#999",
+                                    padding: "0 4px",
+                                  }}
+                                  title="文件暂不可下载"
+                                >
+                                  报告
+                                </span>
+                              ) : null}
                             </div>
                           )}
                         </div>
