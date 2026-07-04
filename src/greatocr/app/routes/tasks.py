@@ -48,6 +48,10 @@ class RetryRequest(BaseModel):
     pages: list[int] = Field(min_length=1)
 
 
+class BatchDeleteRequest(BaseModel):
+    task_ids: list[str] = Field(min_length=1)
+
+
 def _service(request: Request) -> TaskService:
     service = getattr(request.app.state, "task_service", None)
     if service is None:
@@ -171,6 +175,13 @@ def delete_task(task_id: str, request: Request) -> dict[str, str]:
     """删除任务记录。不会删除输出文件或原始文件。"""
     _run(lambda: _service(request).delete(task_id))
     return {"status": "ok", "task_id": task_id}
+
+
+@router.post("/batch-delete")
+def batch_delete_tasks(payload: BatchDeleteRequest, request: Request) -> dict[str, str]:
+    """批量删除任务记录。不会删除输出文件或原始文件。"""
+    _run(lambda: _service(request).batch_delete(payload.task_ids))
+    return {"status": "ok", "deleted": str(len(payload.task_ids))}
 
 
 @router.get("/{task_id}/result-files")

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 import { Link, Route, Routes, useNavigate, useSearchParams } from "react-router-dom"
 import {
   apiFetch,
+  batchDeleteTasks,
   deleteTask,
   getDefaultOutputDir,
   getTask,
@@ -475,12 +476,16 @@ function TaskCenterPage() {
   const focusTaskId = searchParams.get("task")
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [loading, setLoading] = useState(true)
-  const [expandedTaskIds, setExpandedTaskIds] = useState<Record<string, boolean>>({})
   const [resultSummaries, setResultSummaries] = useState<Record<string, TaskResultSummary>>({})
   const [resultLoading, setResultLoading] = useState<Record<string, boolean>>({})
   const [resultErrors, setResultErrors] = useState<Record<string, string>>({})
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false)
+
+  const PAGE_SIZE = 10
 
   useEffect(() => {
     let cancelled = false
@@ -514,20 +519,18 @@ function TaskCenterPage() {
     }
   }, [])
 
+  // 重置页码当任务列表变化
   useEffect(() => {
-    if (!focusTaskId) return
-    const focusedTask = tasks.find((task) => task.task_id === focusTaskId)
-    if (!focusedTask || !canViewResults(focusedTask.status)) return
-    setExpandedTaskIds((current) =>
-      current[focusTaskId] !== undefined ? current : { ...current, [focusTaskId]: true },
-    )
-  }, [focusTaskId, tasks])
+    setPage(1)
+    setSelectedIds(new Set())
+  }, [tasks.length])
 
+  // 为所有终止状态的任务加载结果文件信息（懒加载、只加载一次）
   useEffect(() => {
-    const taskIdsToLoad = tasks
-      .filter((task) => expandedTaskIds[task.task_id] && canViewResults(task.status))
-      .map((task) => task.task_id)
-      .filter((taskId) => !resultSummaries[taskId] && !resultLoading[taskId] && !resultErrors[taskId])
+    const terminalTasks = tasks.filter((t) => TERMINAL_STATUSES.includes(t.status))
+    const taskIdsToLoad = terminalTasks
+      .map((t) => t.task_id)
+      .filter((id) => !resultSummaries[id] && !resultLoading[id] && !resultErrors[id])
 
     if (taskIdsToLoad.length === 0) return
 
@@ -540,38 +543,48 @@ function TaskCenterPage() {
         .catch(() => {
           setResultErrors((current) => ({
             ...current,
-            [taskId]: "结果信息暂时无法读取，请稍后再试。",
+            [taskId]: "结果信息暂时无法读取",
           }))
         })
         .finally(() => {
           setResultLoading((current) => ({ ...current, [taskId]: false }))
         })
     })
-  }, [expandedTaskIds, resultErrors, resultLoading, resultSummaries, tasks])
+  }, [tasks, resultErrors, resultLoading, resultSummaries])
 
-  const toggleTask = (taskId: string) => {
-    setExpandedTaskIds((current) => ({ ...current, [taskId]: !current[taskId] }))
+  // 分页计算
+  const totalPages = Math.max(1, Math.ceil(tasks.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const pageTasks = tasks.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  // 选择状态计算
+  const currentPageTerminal = pageTasks.filter((t) => TERMINAL_STATUSES.includes(t.status))
+  const selectedCount = selectedIds.size
+  const selectAllState: "all" | "some" | "none" =
+    currentPageTerminal.length > 0 && currentPageTerminal.every((t) => selectedIds.has(t.task_id))
+      ? "all"
+      : currentPageTerminal.some((t) => selectedIds.has(t.task_id))
+        ? "some"
+        : "none"
+
+  function handleSelectAll() {
+    if (selectAllState === "all") {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(currentPageTerminal.map((t) => t.task_id)))
+    }
   }
 
-  const handleDelete = async (taskId: string) => {
-    try {
-      await deleteTask(taskId)
-      setTasks((current) => current.filter((t) => t.task_id !== taskId))
-      setExpandedTaskIds((current) => {
-        const next = { ...current }
-        delete next[taskId]
-        return next
-      })
-      setResultSummaries((current) => {
-        const next = { ...current }
-        delete next[taskId]
-        return next
-      })
-    } catch {
-      alert("删除任务失败，请稍后重试。")
-    } finally {
-      setDeleteConfirmId(null)
-    }
+  function handleSelect(taskId: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(taskId)) {
+        next.delete(taskId)
+      } else {
+        next.add(taskId)
+      }
+      return next
+    })
   }
 
   const handleCopyPath = async (path: string) => {
@@ -588,15 +601,95 @@ function TaskCenterPage() {
     try {
       await openOutput(taskId)
     } catch {
-      // 静默处理：文件管理器已打开或出错
+      // 静默处理
     }
   }
 
-  return (
-    <div style={{ padding: "2rem", maxWidth: 860, margin: "0 auto" }}>
-      <h2 style={{ marginTop: 0, color: "#333" }}>任务中心</h2>
+  const handleDelete = async (taskId: string) => {
+    try {
+      await deleteTask(taskId)
+      setTasks((current) => current.filter((t) => t.task_id !== taskId))
+      setResultSummaries((current) => {
+        const next = { ...current }
+        delete next[taskId]
+        return next
+      })
+    } catch {
+      alert("删除任务失败，请稍后重试。")
+    } finally {
+      setDeleteConfirmId(null)
+    }
+  }
 
-      {loading && <div style={{ color: "#888" }}>加载中...</div>}
+  const handleBatchDelete = async () => {
+    const ids = [...selectedIds]
+    try {
+      await batchDeleteTasks(ids)
+      setTasks((current) => current.filter((t) => !ids.includes(t.task_id)))
+      setResultSummaries((current) => {
+        const next = { ...current }
+        ids.forEach((id) => delete next[id])
+        return next
+      })
+      setSelectedIds(new Set())
+    } catch {
+      alert("批量删除失败，请稍后重试。")
+    } finally {
+      setBatchDeleteConfirm(false)
+    }
+  }
+
+  // 表格列样式
+  const thStyle: CSSProperties = {
+    padding: "8px 10px",
+    textAlign: "left",
+    fontWeight: 600,
+    fontSize: "0.85rem",
+    color: "#555",
+    borderBottom: "2px solid #e0e0e0",
+    whiteSpace: "nowrap",
+  }
+  const tdStyle: CSSProperties = {
+    padding: "8px 10px",
+    fontSize: "0.85rem",
+    color: "#333",
+    borderBottom: "1px solid #eee",
+    verticalAlign: "middle",
+  }
+
+  return (
+    <div style={{ padding: "2rem", maxWidth: 1200, margin: "0 auto" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+        }}
+      >
+        <h2 style={{ margin: 0, color: "#333" }}>任务中心</h2>
+        {selectedCount > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: "0.85rem", color: "#666" }}>已选 {selectedCount} 项</span>
+            <button
+              onClick={() => setBatchDeleteConfirm(true)}
+              style={{
+                padding: "6px 16px",
+                fontSize: "0.9rem",
+                color: "#fff",
+                background: "#c62828",
+                border: "none",
+                borderRadius: 6,
+                cursor: "pointer",
+              }}
+            >
+              删除选中
+            </button>
+          </div>
+        )}
+      </div>
+
+      {loading && <div style={{ color: "#888", padding: "2rem 0" }}>加载中...</div>}
 
       {!loading && tasks.length === 0 && (
         <div style={{ color: "#888", padding: "2rem 0", textAlign: "center" }}>
@@ -604,280 +697,339 @@ function TaskCenterPage() {
         </div>
       )}
 
-      {tasks.map((task) => {
-        const expanded = !!expandedTaskIds[task.task_id]
-        const summary = resultSummaries[task.task_id]
-        const isLoadingResults = !!resultLoading[task.task_id]
-        const resultError = resultErrors[task.task_id]
-        const showToggle = canViewResults(task.status)
-
-        return (
-          <div
-            key={task.task_id}
-            style={{
-              padding: "12px 16px",
-              marginBottom: 12,
-              border: "1px solid #e0e0e0",
-              borderRadius: 10,
-              background: focusTaskId === task.task_id ? "#f6fbff" : "#fafafa",
-            }}
-          >
+      {!loading && tasks.length > 0 && (
+        <>
+          {/* 批量删除确认弹窗 */}
+          {batchDeleteConfirm && (
             <div
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: 12,
+                marginBottom: 16,
+                padding: "12px 16px",
+                borderRadius: 8,
+                background: "#fff3cd",
+                border: "1px solid #ffe082",
+                fontSize: "0.9rem",
+                color: "#856404",
               }}
             >
-              <span style={{ fontWeight: 600 }}>{task.display_name}</span>
-              <span
-                style={{
-                  fontSize: "0.8rem",
-                  padding: "2px 10px",
-                  borderRadius: 12,
-                  background: `${STATUS_COLORS[task.status]}18`,
-                  color: STATUS_COLORS[task.status],
-                  border: `1px solid ${STATUS_COLORS[task.status]}40`,
-                }}
-              >
-                {STATUS_LABELS[task.status]}
-              </span>
-            </div>
-
-            <div style={{ marginTop: 6, fontSize: "0.85rem", color: "#666" }}>
-              ID: <code>{task.task_id.slice(0, 12)}...</code> · Provider: {task.provider_profile_id}
-            </div>
-
-            {task.quality_rating && (
-              <div style={{ marginTop: 4, fontSize: "0.85rem", color: "#2e7d32" }}>
-                质量评分: {task.quality_rating}
+              <div style={{ marginBottom: 8 }}>
+                ⚠️ 确认删除选中的 {selectedCount} 条任务记录？仅删除记录，不会删除输出文件。
               </div>
-            )}
-
-            {showToggle && (
-              <div style={{ marginTop: 10 }}>
+              <div style={{ display: "flex", gap: 8 }}>
                 <button
-                  onClick={() => toggleTask(task.task_id)}
+                  onClick={handleBatchDelete}
                   style={{
-                    padding: "6px 14px",
+                    padding: "6px 16px",
                     fontSize: "0.9rem",
-                    color: "#1565c0",
-                    background: "#e3f2fd",
-                    border: "1px solid #90caf9",
+                    color: "#fff",
+                    background: "#c62828",
+                    border: "none",
                     borderRadius: 6,
                     cursor: "pointer",
                   }}
                 >
-                  {expanded ? "收起结果" : "查看结果"}
+                  确认删除
+                </button>
+                <button
+                  onClick={() => setBatchDeleteConfirm(false)}
+                  style={{
+                    padding: "6px 16px",
+                    fontSize: "0.9rem",
+                    color: "#333",
+                    background: "#fff",
+                    border: "1px solid #ccc",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                  }}
+                >
+                  取消
                 </button>
               </div>
-            )}
+            </div>
+          )}
 
-            {expanded && (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 14,
-                  borderRadius: 8,
-                  background: "#fff",
-                  border: "1px solid #dbe7f3",
-                }}
-              >
-                <div style={{ fontSize: "0.9rem", color: "#333", lineHeight: 1.7 }}>
-                  <div>
-                    <strong>任务状态：</strong>
-                    {STATUS_LABELS[task.status]}
-                  </div>
-                  <div>
-                    <strong>文件名：</strong>
-                    {task.display_name}
-                  </div>
-                  <div>
-                    <strong>页码范围：</strong>
-                    {formatPages(task.selected_pages)}
-                  </div>
-                  <div>
-                    <strong>创建时间：</strong>
-                    {formatDateTime(task.created_at)}
-                  </div>
-                  {task.completed_at && (
-                    <div>
-                      <strong>完成时间：</strong>
-                      {formatDateTime(task.completed_at)}
-                    </div>
-                  )}
-                  <div>
-                    <strong>输出目录：</strong>
-                    <code>{task.output_dir}</code>
-                  </div>
-                </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
+              <thead>
+                <tr style={{ background: "#fafafa" }}>
+                  <th style={{ ...thStyle, width: 36, textAlign: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={selectAllState === "all"}
+                      ref={(el) => {
+                        if (el) el.indeterminate = selectAllState === "some"
+                      }}
+                      onChange={handleSelectAll}
+                      aria-label="全选"
+                    />
+                  </th>
+                  <th style={thStyle}>文件名</th>
+                  <th style={{ ...thStyle, width: 90 }}>页码范围</th>
+                  <th style={{ ...thStyle, width: 80 }}>状态</th>
+                  <th style={{ ...thStyle, width: 140 }}>创建时间</th>
+                  <th style={{ ...thStyle, width: 140 }}>完成时间</th>
+                  <th style={thStyle}>输出目录</th>
+                  <th style={{ ...thStyle, width: 160 }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageTasks.map((task) => {
+                  const summary = resultSummaries[task.task_id]
+                  const isResultLoading = !!resultLoading[task.task_id]
+                  const isTerminal = TERMINAL_STATUSES.includes(task.status)
 
-                <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button
-                    onClick={() => handleCopyPath(task.output_dir)}
-                    style={{
-                      padding: "6px 14px",
-                      fontSize: "0.85rem",
-                      color: copyFeedback === task.output_dir ? "#2e7d32" : "#1565c0",
-                      background: copyFeedback === task.output_dir ? "#e6f7e6" : "#e3f2fd",
-                      border: `1px solid ${copyFeedback === task.output_dir ? "#a5d6a7" : "#90caf9"}`,
-                      borderRadius: 6,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {copyFeedback === task.output_dir ? "✅ 已复制" : "复制输出路径"}
-                  </button>
-                  <button
-                    onClick={() => handleOpenOutput(task.task_id)}
-                    style={{
-                      padding: "6px 14px",
-                      fontSize: "0.85rem",
-                      color: "#1565c0",
-                      background: "#e3f2fd",
-                      border: "1px solid #90caf9",
-                      borderRadius: 6,
-                      cursor: "pointer",
-                    }}
-                  >
-                    打开输出文件夹
-                  </button>
-                  <button
-                    onClick={() => setDeleteConfirmId(task.task_id)}
-                    style={{
-                      padding: "6px 14px",
-                      fontSize: "0.85rem",
-                      color: "#c62828",
-                      background: "#fde8e8",
-                      border: "1px solid #ef9a9a",
-                      borderRadius: 6,
-                      cursor: "pointer",
-                    }}
-                  >
-                    删除任务
-                  </button>
-                </div>
+                  return (
+                    <tr
+                      key={task.task_id}
+                      style={{
+                        background: focusTaskId === task.task_id ? "#f6fbff" : undefined,
+                      }}
+                    >
+                      {/* 选择框 */}
+                      <td style={{ ...tdStyle, textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(task.task_id)}
+                          disabled={!isTerminal}
+                          onChange={() => handleSelect(task.task_id)}
+                          aria-label={`选择任务 ${task.display_name}`}
+                        />
+                      </td>
 
-                {deleteConfirmId === task.task_id && (
-                  <div
-                    style={{
-                      marginTop: 10,
-                      padding: "10px 14px",
-                      borderRadius: 8,
-                      background: "#fff3cd",
-                      border: "1px solid #ffe082",
-                      fontSize: "0.9rem",
-                      color: "#856404",
-                    }}
-                  >
-                    <div style={{ marginBottom: 8 }}>
-                      ⚠️ 确认删除此任务记录？仅删除记录，不会删除输出文件。
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        onClick={() => handleDelete(task.task_id)}
-                        style={{
-                          padding: "6px 16px",
-                          fontSize: "0.9rem",
-                          color: "#fff",
-                          background: "#c62828",
-                          border: "none",
-                          borderRadius: 6,
-                          cursor: "pointer",
-                        }}
-                      >
-                        确认删除
-                      </button>
-                      <button
-                        onClick={() => setDeleteConfirmId(null)}
-                        style={{
-                          padding: "6px 16px",
-                          fontSize: "0.9rem",
-                          color: "#333",
-                          background: "#fff",
-                          border: "1px solid #ccc",
-                          borderRadius: 6,
-                          cursor: "pointer",
-                        }}
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                )}
+                      {/* 文件名 */}
+                      <td style={tdStyle}>
+                        <span style={{ fontWeight: 500 }}>{task.display_name}</span>
+                      </td>
 
-                {isLoadingResults && (
-                  <div style={{ marginTop: 12, color: "#666", fontSize: "0.9rem" }}>
-                    正在读取结果文件信息...
-                  </div>
-                )}
+                      {/* 页码范围 */}
+                      <td style={tdStyle}>
+                        {formatPages(task.selected_pages)}
+                      </td>
 
-                {resultError && (
-                  <div style={{ marginTop: 12, color: "#c62828", fontSize: "0.9rem" }}>
-                    {resultError}
-                  </div>
-                )}
+                      {/* 状态 */}
+                      <td style={tdStyle}>
+                        <span
+                          style={{
+                            fontSize: "0.8rem",
+                            padding: "2px 8px",
+                            borderRadius: 10,
+                            background: `${STATUS_COLORS[task.status]}18`,
+                            color: STATUS_COLORS[task.status],
+                            border: `1px solid ${STATUS_COLORS[task.status]}40`,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {STATUS_LABELS[task.status]}
+                        </span>
+                      </td>
 
-                {summary && (
-                  <div style={{ marginTop: 14 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 10, color: "#333" }}>
-                      可下载结果
-                    </div>
+                      {/* 创建时间 */}
+                      <td style={tdStyle}>{formatDateTime(task.created_at)}</td>
 
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div
-                        style={{
-                          padding: 12,
-                          borderRadius: 8,
-                          background: "#f8fbff",
-                          border: "1px solid #d7e7f7",
-                        }}
-                      >
-                        <div style={{ marginBottom: 6, color: "#333" }}>
-                          <strong>result.docx</strong>
-                        </div>
-                        {summary.files.result_docx.exists ? (
-                          <a
-                            href={summary.files.result_docx.download_path ?? "#"}
-                            style={{ color: "#1565c0", textDecoration: "none", fontWeight: 500 }}
+                      {/* 完成时间 */}
+                      <td style={tdStyle}>
+                        {task.completed_at ? formatDateTime(task.completed_at) : "-"}
+                      </td>
+
+                      {/* 输出目录 */}
+                      <td style={{ ...tdStyle, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>
+                        <code style={{ fontSize: "0.8rem" }}>
+                          {task.output_dir.length > 30
+                            ? `...${task.output_dir.slice(-30)}`
+                            : task.output_dir}
+                        </code>
+                      </td>
+
+                      {/* 操作 */}
+                      <td style={tdStyle}>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          <button
+                            onClick={() => handleOpenOutput(task.task_id)}
+                            title="打开输出文件夹"
+                            style={{
+                              padding: "2px 8px",
+                              fontSize: "0.8rem",
+                              color: "#1565c0",
+                              background: "#e3f2fd",
+                              border: "1px solid #90caf9",
+                              borderRadius: 4,
+                              cursor: "pointer",
+                            }}
                           >
-                            下载 result.docx
-                          </a>
-                        ) : (
-                          <div style={{ color: "#666" }}>本次任务暂未生成可下载结果文件</div>
-                        )}
-                      </div>
-
-                      <div
-                        style={{
-                          padding: 12,
-                          borderRadius: 8,
-                          background: "#f8fbff",
-                          border: "1px solid #d7e7f7",
-                        }}
-                      >
-                        <div style={{ marginBottom: 6, color: "#333" }}>
-                          <strong>quality-report.docx</strong>
-                        </div>
-                        {summary.files.quality_report_docx.exists ? (
-                          <a
-                            href={summary.files.quality_report_docx.download_path ?? "#"}
-                            style={{ color: "#1565c0", textDecoration: "none", fontWeight: 500 }}
+                            📁
+                          </button>
+                          <button
+                            onClick={() => handleCopyPath(task.output_dir)}
+                            title="复制输出路径"
+                            style={{
+                              padding: "2px 8px",
+                              fontSize: "0.8rem",
+                              color: copyFeedback === task.output_dir ? "#2e7d32" : "#1565c0",
+                              background: copyFeedback === task.output_dir ? "#e6f7e6" : "#e3f2fd",
+                              border: `1px solid ${copyFeedback === task.output_dir ? "#a5d6a7" : "#90caf9"}`,
+                              borderRadius: 4,
+                              cursor: "pointer",
+                            }}
                           >
-                            下载 quality-report.docx
-                          </a>
-                        ) : (
-                          <div style={{ color: "#666" }}>本次未生成质量报告</div>
+                            {copyFeedback === task.output_dir ? "✔" : "📋"}
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirmId(task.task_id)}
+                            title="删除任务"
+                            style={{
+                              padding: "2px 8px",
+                              fontSize: "0.8rem",
+                              color: "#c62828",
+                              background: "#fde8e8",
+                              border: "1px solid #ef9a9a",
+                              borderRadius: 4,
+                              cursor: "pointer",
+                            }}
+                          >
+                            🗑
+                          </button>
+                          {/* 下载链接（以降级方式显示） */}
+                          {isTerminal && (
+                            <div style={{ display: "inline-flex", gap: 2, alignItems: "center" }}>
+                              {isResultLoading && (
+                                <span style={{ fontSize: "0.75rem", color: "#999" }}>加载中</span>
+                              )}
+                              {summary?.files.result_docx.exists && (
+                                <a
+                                  href={summary.files.result_docx.download_path ?? "#"}
+                                  style={{
+                                    fontSize: "0.75rem",
+                                    color: "#999",
+                                    textDecoration: "none",
+                                    padding: "0 4px",
+                                  }}
+                                  title="下载 result.docx"
+                                >
+                                  结果
+                                </a>
+                              )}
+                              {summary?.files.quality_report_docx.exists && (
+                                <a
+                                  href={summary.files.quality_report_docx.download_path ?? "#"}
+                                  style={{
+                                    fontSize: "0.75rem",
+                                    color: "#999",
+                                    textDecoration: "none",
+                                    padding: "0 4px",
+                                  }}
+                                  title="下载 quality-report.docx"
+                                >
+                                  报告
+                                </a>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 单个删除确认 */}
+                        {deleteConfirmId === task.task_id && (
+                          <div
+                            style={{
+                              marginTop: 6,
+                              padding: "8px 12px",
+                              borderRadius: 6,
+                              background: "#fff3cd",
+                              border: "1px solid #ffe082",
+                              fontSize: "0.8rem",
+                              color: "#856404",
+                            }}
+                          >
+                            <div style={{ marginBottom: 6 }}>
+                              仅删除记录，不删除输出文件。
+                            </div>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button
+                                onClick={() => handleDelete(task.task_id)}
+                                style={{
+                                  padding: "4px 12px",
+                                  fontSize: "0.8rem",
+                                  color: "#fff",
+                                  background: "#c62828",
+                                  border: "none",
+                                  borderRadius: 4,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                确认
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirmId(null)}
+                                style={{
+                                  padding: "4px 12px",
+                                  fontSize: "0.8rem",
+                                  color: "#333",
+                                  background: "#fff",
+                                  border: "1px solid #ccc",
+                                  borderRadius: 4,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                取消
+                              </button>
+                            </div>
+                          </div>
                         )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-        )
-      })}
+
+          {/* 分页 */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: 16,
+              marginTop: 20,
+              fontSize: "0.9rem",
+              color: "#666",
+            }}
+          >
+            <button
+              disabled={safePage <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              style={{
+                padding: "6px 16px",
+                fontSize: "0.9rem",
+                color: safePage <= 1 ? "#ccc" : "#1565c0",
+                background: safePage <= 1 ? "#f5f5f5" : "#e3f2fd",
+                border: `1px solid ${safePage <= 1 ? "#e0e0e0" : "#90caf9"}`,
+                borderRadius: 6,
+                cursor: safePage <= 1 ? "not-allowed" : "pointer",
+              }}
+            >
+              ← 上一页
+            </button>
+            <span>
+              第 {safePage}/{totalPages} 页（共 {tasks.length} 条）
+            </span>
+            <button
+              disabled={safePage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              style={{
+                padding: "6px 16px",
+                fontSize: "0.9rem",
+                color: safePage >= totalPages ? "#ccc" : "#1565c0",
+                background: safePage >= totalPages ? "#f5f5f5" : "#e3f2fd",
+                border: `1px solid ${safePage >= totalPages ? "#e0e0e0" : "#90caf9"}`,
+                borderRadius: 6,
+                cursor: safePage >= totalPages ? "not-allowed" : "pointer",
+              }}
+            >
+              下一页 →
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -177,6 +177,17 @@ export async function deleteTask(taskId: string): Promise<void> {
   }
 }
 
+export async function batchDeleteTasks(taskIds: string[]): Promise<void> {
+  const res = await apiFetch("/tasks/batch-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ task_ids: taskIds }),
+  })
+  if (!res.ok) {
+    throw new Error(`批量删除失败 (${res.status})`)
+  }
+}
+
 export async function openOutput(taskId: string): Promise<void> {
   const res = await apiFetch(`/tasks/${taskId}/open-output`, { method: "POST" })
   if (!res.ok) {

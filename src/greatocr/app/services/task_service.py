@@ -176,6 +176,14 @@ class TaskService:
         self.get(task_id)  # 确认任务存在（不存在则抛 404）
         self.database.delete_task(task_id)
 
+    def batch_delete(self, task_ids: list[str]) -> None:
+        """批量删除任务记录。不会删除输出文件或原始文件。"""
+        for task_id in task_ids:
+            try:
+                self.database.delete_task(task_id)
+            except KeyError:
+                pass  # 跳过已删除或不存在的任务
+
     def _source_path(self, task_id: str) -> Path:
         task = self.get(task_id)
         source = self._runtime_source_paths.get(task_id)
