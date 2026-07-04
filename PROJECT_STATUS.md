@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-最后更新：2026-07-02
+最后更新：2026-07-03
 
 ## 当前项目目标是什么
 
@@ -47,25 +47,52 @@ GreatOCR 当前的总体目标是把一个本地 PDF 重建引擎逐步做成可
 - 结果版本管理（`result-v1.docx`、`result-v2.docx` 等）
 - CLI 入口：`doctor`、`convert`、`rework`
 
+### V2.3 M2 新增
+
+- **文件上传端点** `POST /api/tasks/upload-file` — 接收文件上传，自动预检获取总页数，创建任务
+- **启动脚本** `scripts/serve.py` — 一键初始化数据库、seed fake-default provider、后台 Worker 自动处理任务
+- **前端新建任务页面** — 文件选择、Provider 选择、「开始 OCR」按钮、状态轮询、结果展示
+- **前端任务中心页面** — 任务列表、状态标签、自动刷新、质量评分与输出目录显示
+- **前端设置页面** — Provider 列表展示、API Key 配置状态、配置命令指引
+- **依赖补充** — `python-multipart` 用于文件上传
+
+### 真实文件测试验证（2026-07-03）
+
+- **测试 Provider**: MinerU（真实 OCR）
+- **测试文件**: `testsamples/中英夹杂的.pdf`（2 页扫描件，中英双语董事会决议）
+- **测试结果**:
+  - ✅ 上传 → 任务创建 → OCR 处理 → 结果生成 全流程通过
+  - ✅ 质量评级：**high**（质量报告）
+  - ✅ 中英双语内容均被正确识别
+  - ⚠️ 存在单词粘连、数字格式混用问题
+  - ⚠️ MinerU 识别的页码块类型未正确映射
+  - ❌ 印章/签字区域未提取，仅输出文字文本
+  - ❌ 前端暂不支持指定页码范围
+- **详细报告**: [docs/reports/real-file-ocr-test.md](./docs/reports/real-file-ocr-test.md)
+
 ### 已完成的验收结论
 
-- 主线 V2.2 已有验收报告：[v2-2-page-selection-providers-report.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/acceptance/v2-2-page-selection-providers-report.md)
-- 真实 MinerU 上传已对一份用户明确授权 PDF 完成
-- 加密 PDF 会被正确识别并阻止
-- fake provider 离线验收已通过
-- V2.3 后端巡检报告已整理至 [docs/reports/RUN_REPORT.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/reports/RUN_REPORT.md)
-- V2.3 前端应用壳报告已整理至 [docs/reports/FRONTEND_REPORT.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/reports/FRONTEND_REPORT.md)
-- V2.3 App Shell 基础验证报告已整理至 [docs/reports/VALIDATION_REPORT.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/reports/VALIDATION_REPORT.md)
+- 主线 V2.2 已有验收报告
+- V2.3 M2 后端 API 已验证：health / upload / start / get / list / providers / auth 共 7 个场景全部通过
+- fake provider（离线测试）✅ MinerU（真实 OCR）✅ 双流程均跑通
+- 现有 31 个后端测试、2 个前端测试全部通过
 
 ## 未完成的功能
 
-### V2.3 未完成
+### V2.3 待完成
 
-- 图形界面尚未合入主线
-- 本地 Web 应用尚未形成完整交付版本
-- App Shell 已完成并通过基础启动与联通验证，但业务页面仍未完成
-- FastAPI 与前端静态资源的一体化发布尚未完成
-- 完整端到端人工验收报告尚未生成
+| 任务 | 内容 | 优先级 |
+|------|------|--------|
+| M3.1 | PDF 指定页码上传 | 高 |
+| M3.2 | OCR 识别质量参数优化（单词粘连、数字格式） | 中 |
+| M3.3 | 版式还原优化（未知块类型、分页漂移） | 中 |
+| M3.4 | 印章/签字识别能力评估 | 低 |
+| M3.5 | 结果导出/展示优化（预览、下载、问题高亮） | 高 |
+| — | 任务详情页（缩略图预览、结果 DOCX 查看） | 中 |
+| — | 设置页 API Key 输入 UI | 中 |
+| — | UI 美化 | 低 |
+| — | 前后端一体化启动 | 低 |
+| — | 完整端到端人工验收报告 | 低 |
 
 ### V2.4 未开始
 
@@ -103,7 +130,8 @@ GreatOCR 当前的总体目标是把一个本地 PDF 重建引擎逐步做成可
 
 | 路径 | 方法 | 作用 |
 | --- | --- | --- |
-| `/api/tasks` | `POST` | 创建任务 |
+| `/api/tasks` | `POST` | 创建任务（需提供服务器端文件路径） |
+| `/api/tasks/upload-file` | `POST` | **V2.3 M2 新增** — 上传文件并创建任务（一体式端点） |
 | `/api/tasks` | `GET` | 列出任务 |
 | `/api/tasks/{task_id}` | `GET` | 查看任务详情 |
 | `/api/tasks/{task_id}/preflight` | `POST` | 对任务源 PDF 执行预检 |
@@ -127,147 +155,68 @@ GreatOCR 当前的总体目标是把一个本地 PDF 重建引擎逐步做成可
 ### `tasks`
 
 - 作用：保存任务元数据与队列状态
-- 当前字段：
-  - `task_id`
-  - `display_name`
-  - `source_path`
-  - `sensitive`
-  - `selected_pages`
-  - `provider_profile_id`
-  - `approved_fallback_ids`
-  - `status`
-  - `output_dir`
-  - `quality_rating`
-  - `requested_action`
-  - `created_at`
+- 当前字段：`task_id`, `display_name`, `source_path`, `sensitive`, `selected_pages`, `provider_profile_id`, `approved_fallback_ids`, `status`, `output_dir`, `quality_rating`, `requested_action`, `created_at`
 
 ### `provider_profiles`
 
 - 作用：保存 provider 配置，不保存 API key
-- 当前字段：
-  - `profile_id`
-  - `display_name`
-  - `adapter_type`
-  - `endpoint`
-  - `public`
-  - `capabilities`
-  - `approved_fallback_ids`
+- 当前字段：`profile_id`, `display_name`, `adapter_type`, `endpoint`, `public`, `capabilities`, `approved_fallback_ids`
 
 补充说明：
 
-- API key 不写入 SQLite
-- 凭据设计放在 Windows 当前用户凭据存储中
+- API key 不写入 SQLite，通过 Windows 凭据管理器（keyring）管理
 - 敏感任务默认不把真实 `source_path` 持久化进数据库
 
 ## 前端完成了哪些页面
 
-主线 `main` 当前没有前端目录。
-
-V2.3 工作树中的前端状态如下：
-
-- 已完成：
-  - `frontend/package.json`
-  - `vite`/`vitest`/`TypeScript` 基础配置
-  - 前端测试基架
-  - `App.tsx`
-  - `api.ts`
-  - `main.tsx`
-  - 一个可运行的 App Shell，包含导航与健康检查状态显示
-  - 一个导航层级的基础页面结构，当前包含：
-    - 任务中心
-    - 新建任务
-    - 设置
-
-- 尚未完成：
-  - `TaskCenter.tsx`
-  - `NewTaskWizard.tsx`
-  - `TaskDetail.tsx`
-  - `Settings.tsx`
-
-结论：前端已从“纯脚手架阶段”进入“可运行 App Shell 阶段”。当前页面已可启动、可显示、可访问 `/api/health`，但业务页面仍以占位实现为主，尚未进入完整可交付状态。
+| 页面 | 路由 | 状态 |
+| --- | --- | --- |
+| 首页 | `/` | ✅ 欢迎信息 + 快速开始按钮 |
+| 新建任务 | `/new` | ✅ 文件选择 + Provider 选择 + 上传 + 启动 + 轮询 + 结果 |
+| 任务中心 | `/tasks` | ✅ 任务列表 + 状态标签 + 自动刷新 |
+| 设置 | `/settings` | ✅ Provider 列表 + API Key 状态 + 配置指引 |
 
 ## 如何启动项目
 
-### 当前主线 `main`
-
-先准备本地 Python 虚拟环境并安装依赖：
+### 一键后端启动（推荐）
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[dev]"
+.\.venv\Scripts\python.exe scripts\serve.py
 ```
 
-常用检查命令：
+首次启动自动创建 `data/` 目录和 `fake-default` provider。
+
+### 前端启动（另一个终端）
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -m greatocr.cli doctor
+cd .\frontend\
+C:\Users\user\.workbuddy\binaries\node\versions\22.22.2\node.exe .\node_modules\vite\bin\vite.js
 ```
 
-本地预检一个 PDF：
-
-```powershell
-.\.venv\Scripts\python.exe -m greatocr.cli convert <你的PDF路径> --dry-run
-```
-
-页/表返工入口：
-
-```powershell
-.\.venv\Scripts\python.exe -m greatocr.cli rework --task-dir <任务目录> --pages 3,8
-.\.venv\Scripts\python.exe -m greatocr.cli rework --task-dir <任务目录> --tables table-1
-```
-
-### V2.3 工作树
-
-V2.3 当前已有明确的开发态启动与验证记录，可参考：
-
-- [docs/reports/RUN_REPORT.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/reports/RUN_REPORT.md)
-- [docs/reports/FRONTEND_REPORT.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/reports/FRONTEND_REPORT.md)
-- [docs/reports/VALIDATION_REPORT.md](/D:/codeprojects/codex-workspace/GreatOCR/docs/reports/VALIDATION_REPORT.md)
-
-当前判断：
-
-- 后端可启动
-- 前端可启动
-- 前端可访问 `/api/health`
-- App Shell 页面可正常显示
-
-但它仍然是开发态成果，不等于完整交付版本；现阶段更适合继续开发与测试，而不是直接给最终用户使用。
+浏览器访问 `http://localhost:5173/`。
 
 ## 当前有哪些已知问题
 
-### 主线层面
+### 识别质量问题
 
-- `main` 只有 CLI 和引擎，没有图形界面
-- 缺少统一的项目说明文档，启动方式主要分散在计划和测试中
-- `convert` 命令仍偏“预检/占位”，不是完整端到端 GUI 工作流
+- 英语段落存在单词粘连（`theCompany` 应为 `the Company`）
+- 数字格式前后不一致（`52,077,455.23` 与 `52.077.455.23` 混用）
+- MinerU 识别的 `page_number` 块类型未映射到模型，产生 `unknown_provider_block` 警告
 
-### V2.3 层面
+### 版本中问题
 
-- Web API 尚未合入主线
-- 前端 App Shell 已实现并通过基础验证，但核心业务页面仍未完成
-- 前后端集成、静态资源托管和最终启动方式尚未收口
-- 主线与工作树状态需要在文档中明确区分
+- 印章/签字区域仅输出文字，无图像提取
+- 前端暂不支持指定页码范围，默认全部页面
+- 缺少结果预览/下载功能
+- 设置页的 API Key 输入 UI 未实现（需通过 curl 或 Postman 配置）
 
 ### 安全与流程边界
 
 - 真实 MinerU 上传必须逐次得到用户明确授权
-- 项目根目录仍存在 `MinerU API key.txt`，虽然已被 `.gitignore` 排除，但后续开发仍需继续遵守“不读取、不打印、不提交”的规则
-
-## 建议下一步开发顺序
-
-1. 先完成 V2.3 Task 5：把前端应用壳、`App.tsx`、`api.ts`、`main.tsx` 补齐，让导航与 token 请求链路真正可运行。
-2. 再完成 V2.3 Task 6：实现任务中心、新建任务向导、任务详情、设置页面。
-3. 完成 V2.3 Task 7：把前端构建产物接入 FastAPI，跑通 fake provider 端到端验收，并补完整的 `v2-3-local-app-report.md`。
-4. V2.3 全量验证通过后，再决定是否合并回 `main`。
-5. 最后进入 V2.4：做便携打包、干净环境验证和发布说明。
+- 项目根目录仍存在 `MinerU API key.txt`，虽然已被 `.gitignore` 排除，但后续开发仍需继续遵守"不读取、不打印、不提交"的规则
 
 ## 现状结论
 
-现在的 GreatOCR 已经是一个功能完整度较高的本地 OCR 重建引擎，主线价值主要在“CLI + 安全控制 + Word 重建 + 质量报告 + 选页与返工能力”。项目当前真正的开发重心已经从“引擎能力”转向“本地图形界面交付”和“最终发布形态”。
+V2.3 M2 已完成——第一条真实 OCR 流程已可运行（fake provider 离线测试 + MinerU 真实 OCR 双流程均已通过真实文件验证）。质量评级 **high**，但存在单词粘连、数字格式、未知块类型等识别问题，以及印章提取、页码选择等功能缺口。
 
-补充结论：
-
-- 以仓库根目录视角看，主线仍以 CLI/引擎为主
-- 以 V2.3 工作树视角看，App Shell 已完成并通过基础验证
-- 下一阶段重点应放在业务页面落地与前后端完整集成，而不是重复搭脚手架
+后续开发建议优先补齐 **M3.1 页码选择** 和 **M3.5 结果展示优化**，再逐步优化 OCR 质量和版式还原。

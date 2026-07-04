@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ipaddress import ip_address
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, FastAPI
 
@@ -27,6 +28,7 @@ def create_app(
     credential_service=None,
     provider_connection_tester=None,
     task_service=None,
+    upload_dir: str | Path | None = None,
 ) -> FastAPI:
     if not session_token:
         raise ValueError("session token cannot be empty")
@@ -40,6 +42,7 @@ def create_app(
     app.state.credential_service = credential_service
     app.state.provider_connection_tester = provider_connection_tester
     app.state.task_service = task_service
+    app.state.upload_dir = Path(upload_dir) if upload_dir else None
     app.include_router(
         api_router,
         prefix="/api",

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import uuid
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from greatocr.app.schemas import NewTask, TaskRecord
 from greatocr.app.services.task_service import TaskService, TaskServiceError
+from greatocr.ingest.preflight import InvalidPdfError, run_preflight
 
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -141,3 +144,105 @@ def task_versions(task_id: str, request: Request) -> list[str]:
 def open_task_output(task_id: str, request: Request) -> dict[str, str]:
     _run(lambda: _service(request).open_output(task_id))
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# 文件上传 + 创建任务（合并为一步，适合 Web 前端使用）
+# ---------------------------------------------------------------------------
+
+class UploadResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    task: TaskRecord
+    file_path: str
+    size_bytes: int
+
+
+@router.post("/upload-file", status_code=status.HTTP_201_CREATED)
+async def upload_and_create_task(
+    request: Request,
+    file: UploadFile = File(...),
+    sensitive: bool = Form(False),
+    provider_profile_id: str = Form("fake-default"),
+    pages: str = Form(""),
+    approved_fallback_ids: str = Form(""),
+) -> UploadResult:
+    """接收文件上传，保存到 uploads 目录后直接创建任务。
+
+    参数：
+      file:                  上传的文件（PDF 或图片）
+      sensitive:             是否敏感任务（默认 false）
+      provider_profile_id:   OCR provider ID（默认 fake-default）
+      pages:                 逗号分隔的页码，如 "1,2,3"；留空表示全部页面
+      approved_fallback_ids: 逗号分隔的 fallback provider ID 列表
+
+    返回：
+      task:      已创建的任务记录（状态为 paused）
+      file_path: 服务器上保存的文件路径
+      size_bytes: 文件大小
+    """
+    upload_dir: Path | None = getattr(request.app.state, "upload_dir", None)
+    if upload_dir is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "UPLOAD_DIR_NOT_CONFIGURED"},
+        )
+
+    # 校验文件名，防止路径穿越
+    filename = file.filename or "upload"
+    safe_name = Path(filename).name
+    if not safe_name:
+        safe_name = "upload"
+
+    # 生成唯一子目录保存文件
+    file_id = uuid.uuid4().hex
+    save_dir = upload_dir / file_id
+    save_dir.mkdir(parents=True, exist_ok=True)
+    save_path = save_dir / safe_name
+
+    content = await file.read()
+    save_path.write_bytes(content)
+
+    # 解析页码
+    parsed_pages: list[int] = []
+    if pages and pages.strip():
+        for p in pages.split(","):
+            p = p.strip()
+            if p:
+                parsed_pages.append(int(p))
+
+    # 如果未指定页面，尝试预检获取总页数（仅 PDF）
+    if not parsed_pages:
+        try:
+            preflight = run_preflight(save_path)
+            if not preflight.encrypted:
+                parsed_pages = list(range(1, preflight.page_count + 1))
+        except InvalidPdfError:
+            # 不是有效 PDF（可能是图片），不设页面限制
+            pass
+        except Exception:
+            # 其他预检失败不阻塞上传
+            pass
+
+    parsed_fallback: list[str] = []
+    if approved_fallback_ids and approved_fallback_ids.strip():
+        for f in approved_fallback_ids.split(","):
+            f = f.strip()
+            if f:
+                parsed_fallback.append(f)
+
+    # 通过已有 TaskService 创建任务
+    new_task = NewTask(
+        source_path=str(save_path),
+        sensitive=sensitive,
+        pages=parsed_pages,
+        provider_profile_id=provider_profile_id,
+        approved_fallback_ids=parsed_fallback,
+    )
+    task = _run(lambda: _service(request).create(new_task))
+
+    return UploadResult(
+        task=task,
+        file_path=str(save_path),
+        size_bytes=len(content),
+    )
