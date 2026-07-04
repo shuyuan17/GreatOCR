@@ -146,6 +146,23 @@ else:
         print(f'[serve]       -H "Content-Type: application/json" \\')
         print(f'[serve]       -d \'{{"profile_id":"mineru-default","display_name":"MinerU","adapter_type":"mineru","endpoint":"https://mineru.net","public":true,"capabilities":{{"tables":true,"images":true}}}}\'')
 
+# ---------- 初始化默认偏好设置 ----------
+DEFAULT_PREFERENCES = {
+    "ocr_language": "auto",
+    "sensitive_file_mode": "false",
+    "pdf_process_all_pages": "true",
+    "pdf_default_page_range": "",
+    "output_default_dir": str(DATA_DIR / "exports"),
+    "output_same_as_input": "true",
+    "result_export_docx": "true",
+    "result_generate_quality_report": "true",
+}
+existing_prefs = database.get_preferences()
+for key, value in DEFAULT_PREFERENCES.items():
+    if key not in existing_prefs:
+        database.set_preference(key, value)
+print(f"[serve] ✓ 偏好设置已初始化")
+
 # ---------- 服务 ----------
 thumbnails = ThumbnailService(THUMBNAIL_DIR)
 task_service = TaskService(database, credentials, thumbnails)

@@ -153,7 +153,7 @@ describe("GreatOCR application shell", () => {
       </MemoryRouter>,
     )
 
-    expect(await screen.findByRole("link", { name: "下载 result.docx" })).toBeInTheDocument()
+    expect(await screen.findByText("结果")).toBeInTheDocument()
   })
 
   it("shows a friendly message when quality report is missing", async () => {
@@ -174,7 +174,10 @@ describe("GreatOCR application shell", () => {
       </MemoryRouter>,
     )
 
-    expect(await screen.findByText("本次未生成质量报告")).toBeInTheDocument()
+    // 结果链接应存在
+    expect(await screen.findByText("结果")).toBeInTheDocument()
+    // 质量报告因为不存在，不应有"报告"链接
+    expect(screen.queryByText("报告")).not.toBeInTheDocument()
   })
 
   it("loads the default output path on the new task page", async () => {

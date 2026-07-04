@@ -24,9 +24,20 @@ class ProviderProfileInput(BaseModel):
     display_name: str
     adapter_type: Literal["mineru", "generic_vision", "fake"]
     endpoint: str | None = None
+    model: str | None = None
     public: bool = True
     capabilities: dict[str, Any] = Field(default_factory=dict)
     approved_fallback_ids: list[str] = Field(default_factory=list)
+
+
+class ProviderUpdate(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    display_name: str | None = None
+    endpoint: str | None = None
+    model: str | None = None
+    capabilities: dict[str, Any] | None = None
+    approved_fallback_ids: list[str] | None = None
 
 
 class ProviderView(ProviderProfileInput):
@@ -140,3 +151,47 @@ def test_capabilities(profile_id: str, request: Request) -> dict[str, Any]:
         "profile_id": profile_id,
         "capabilities": profile["capabilities"],
     }
+
+
+@router.patch("/{profile_id}")
+def update_provider_settings(
+    profile_id: str,
+    updates: ProviderUpdate,
+    request: Request,
+) -> ProviderView:
+    """更新 provider 设置（不包含 API Key）。"""
+    database, credentials = _services(request)
+    existing = database.get_provider(profile_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "PROVIDER_NOT_FOUND"},
+        )
+
+    merged = dict(existing)
+    update_dict = {k: v for k, v in updates.model_dump().items() if v is not None}
+    merged.update(update_dict)
+    database.save_provider(merged)
+    stored = database.get_provider(profile_id)
+    assert stored is not None
+    return _view(stored, credentials)
+
+
+@router.post("/{profile_id}/credential", status_code=status.HTTP_200_OK)
+def set_provider_credential(
+    profile_id: str,
+    request: Request,
+    provider_key: str = Header(alias="X-GreatOCR-Provider-Key"),
+) -> ProviderView:
+    """单独设置 provider API Key，无需重新提交完整 profile。"""
+    database, credentials = _services(request)
+    existing = database.get_provider(profile_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "PROVIDER_NOT_FOUND"},
+        )
+    credentials.set(profile_id, provider_key)
+    stored = database.get_provider(profile_id)
+    assert stored is not None
+    return _view(stored, credentials)

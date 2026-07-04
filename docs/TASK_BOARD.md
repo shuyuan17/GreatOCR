@@ -205,5 +205,38 @@
 
 - OCR 识别质量参数优化（M3.2）
 - 版式还原优化（M3.3）
-- 设置页 API Key 输入 UI
 - 结果在线预览与问题项高亮
+
+## 2026-07-04 V2.3 M4 设置中心 补充更新
+
+- **已完成 V2.3 M4 设置中心** — 完整的交互式设置表单，无需 curl 或修改配置文件。
+- **数据库 schema 升级到 v3** — 新增 `preferences` 表（键值对），`provider_profiles` 增加 `model` 列。
+- **新增后端 API**：`GET/PUT /api/preferences`、`PATCH /api/providers/{id}`、`POST /api/providers/{id}/credential`。
+- **前端设置页面全面改造** — 六个分区的交互表单（OCR Provider、OCR 参数、PDF 默认设置、输出设置、结果设置、配置管理）。
+- **新增 `routes/preferences.py`** 路由文件。
+
+### 本次完成项
+
+| 项目 | 状态 |
+| --- | --- |
+| Preferences 数据库表 | 已完成 |
+| Provider model 字段 | 已完成 |
+| GET/PUT /api/preferences 接口 | 已完成 |
+| PATCH /api/providers/{id} 接口 | 已完成 |
+| POST /api/providers/{id}/credential 接口 | 已完成 |
+| 前端 API Key 输入（密码框 + 显示/隐藏） | 已完成 |
+| 前端 Base URL 和 Model 编辑 | 已完成 |
+| 前端测试连接按钮 | 已完成 |
+| 前端 OCR 参数（语言、敏感模式） | 已完成 |
+| 前端 PDF 默认设置（全部页面、页码范围） | 已完成 |
+| 前端输出设置（目录、同输入目录） | 已完成 |
+| 前端结果设置（DOCX、Quality Report） | 已完成 |
+| 前端配置管理信息展示 | 已完成 |
+| schema 版本 v2→v3 自动迁移 | 已完成 |
+| 全部 217 个测试通过（205 后端 + 12 前端） | 已完成 |
+
+### 当前限制
+
+- 设置的偏好尚未自动应用到新建任务流程（后续需集成到 NewTaskPage）。
+- fake-default provider 不支持 Model 设置（前端已隐藏该字段）。
+- 敏感文件模式仅保存配置，完整隐私策略待后续实现。

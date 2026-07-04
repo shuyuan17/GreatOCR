@@ -6,11 +6,13 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, FastAPI
 
 from greatocr.app.auth import require_local_session
+from greatocr.app.routes.preferences import router as preferences_router
 from greatocr.app.routes.providers import router as providers_router
 from greatocr.app.routes.tasks import router as tasks_router
 
 
 api_router = APIRouter()
+api_router.include_router(preferences_router)
 api_router.include_router(providers_router)
 api_router.include_router(tasks_router)
 

@@ -18,7 +18,7 @@ from greatocr.app.schemas import (
 )
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class TaskDatabase:
@@ -208,13 +208,14 @@ class TaskDatabase:
             self._connection.execute(
                 """
                 INSERT INTO provider_profiles (
-                    profile_id, display_name, adapter_type, endpoint, public,
+                    profile_id, display_name, adapter_type, endpoint, model, public,
                     capabilities, approved_fallback_ids
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(profile_id) DO UPDATE SET
                     display_name = excluded.display_name,
                     adapter_type = excluded.adapter_type,
                     endpoint = excluded.endpoint,
+                    model = excluded.model,
                     public = excluded.public,
                     capabilities = excluded.capabilities,
                     approved_fallback_ids = excluded.approved_fallback_ids
@@ -224,6 +225,7 @@ class TaskDatabase:
                     payload["display_name"],
                     payload["adapter_type"],
                     payload.get("endpoint"),
+                    payload.get("model"),
                     int(bool(payload.get("public", True))),
                     json.dumps(payload.get("capabilities", {}), ensure_ascii=False),
                     json.dumps(payload.get("approved_fallback_ids", [])),
@@ -305,9 +307,15 @@ class TaskDatabase:
                     display_name TEXT NOT NULL,
                     adapter_type TEXT NOT NULL,
                     endpoint TEXT,
+                    model TEXT,
                     public INTEGER NOT NULL,
                     capabilities TEXT NOT NULL,
                     approved_fallback_ids TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS preferences (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
                 );
                 """
             )
@@ -323,6 +331,8 @@ class TaskDatabase:
                 current_version = int(row["version"])
                 if current_version == 1 and SCHEMA_VERSION == 2:
                     self._migrate_v1_to_v2()
+                elif current_version == 2 and SCHEMA_VERSION == 3:
+                    self._migrate_v2_to_v3()
                 else:
                     raise RuntimeError(
                         f"Unsupported database schema version: {current_version}"
@@ -338,6 +348,65 @@ class TaskDatabase:
                 "UPDATE schema_version SET version = ?",
                 (SCHEMA_VERSION,),
             )
+
+    def _migrate_v2_to_v3(self) -> None:
+        """从 schema v2 升级到 v3：添加 model 列和 preferences 表。"""
+        with self._lock, self._connection:
+            # 添加 model 列（如果不存在）
+            cols = {
+                row["name"]
+                for row in self._connection.execute(
+                    "PRAGMA table_info(provider_profiles)"
+                ).fetchall()
+            }
+            if "model" not in cols:
+                self._connection.execute(
+                    "ALTER TABLE provider_profiles ADD COLUMN model TEXT"
+                )
+            # 创建 preferences 表
+            self._connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS preferences (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+            self._connection.execute(
+                "UPDATE schema_version SET version = ?",
+                (SCHEMA_VERSION,),
+            )
+
+    def get_preferences(self) -> dict[str, str]:
+        """返回所有偏好设置。"""
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT key, value FROM preferences"
+            ).fetchall()
+        return {str(row["key"]): str(row["value"]) for row in rows}
+
+    def set_preference(self, key: str, value: str) -> None:
+        """设置单个偏好项（UPSERT）。"""
+        with self._lock, self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO preferences (key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (key, value),
+            )
+
+    def set_preferences(self, prefs: dict[str, str]) -> None:
+        """批量设置偏好项。"""
+        with self._lock, self._connection:
+            for key, value in prefs.items():
+                self._connection.execute(
+                    """
+                    INSERT INTO preferences (key, value) VALUES (?, ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                    """,
+                    (key, str(value)),
+                )
 
     @staticmethod
     def _task_from_row(row: sqlite3.Row) -> TaskRecord:
@@ -364,6 +433,7 @@ class TaskDatabase:
             "display_name": row["display_name"],
             "adapter_type": row["adapter_type"],
             "endpoint": row["endpoint"],
+            "model": row["model"],
             "public": bool(row["public"]),
             "capabilities": json.loads(row["capabilities"]),
             "approved_fallback_ids": json.loads(row["approved_fallback_ids"]),

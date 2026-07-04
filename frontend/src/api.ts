@@ -78,17 +78,115 @@ export interface DefaultOutputDirResponse {
   output_dir: string
 }
 
+export interface Preferences {
+  [key: string]: string
+}
+
+export interface ProviderUpdate {
+  display_name?: string
+  endpoint?: string | null
+  model?: string | null
+  capabilities?: Record<string, unknown>
+  approved_fallback_ids?: string[]
+}
+
+/* ------------------------------------------------------------------ */
+/*  Preferences API                                                    */
+/* ------------------------------------------------------------------ */
+
+export async function getPreferences(): Promise<Preferences> {
+  const res = await apiFetch("/preferences")
+  if (!res.ok) {
+    throw new Error(`获取偏好设置失败 (${res.status})`)
+  }
+  return res.json()
+}
+
+export async function updatePreferences(
+  preferences: Preferences,
+): Promise<Preferences> {
+  const res = await apiFetch("/preferences", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ preferences }),
+  })
+  if (!res.ok) {
+    throw new Error(`更新偏好设置失败 (${res.status})`)
+  }
+  return res.json()
+}
+
+/* ------------------------------------------------------------------ */
+/*  Provider API types                                                 */
+/* ------------------------------------------------------------------ */
+
 export interface ProviderView {
   profile_id: string
   display_name: string
   adapter_type: string
   endpoint: string | null
+  model: string | null
   public: boolean
   capabilities: Record<string, unknown>
   approved_fallback_ids: string[]
   credential: {
     configured: boolean
     masked: string | null
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Provider API                                                       */
+/* ------------------------------------------------------------------ */
+
+export async function listProviders(): Promise<ProviderView[]> {
+  const res = await apiFetch("/providers")
+  if (!res.ok) {
+    throw new Error(`获取 Provider 列表失败 (${res.status})`)
+  }
+  return res.json()
+}
+
+export async function updateProviderProfile(
+  profileId: string,
+  updates: ProviderUpdate,
+): Promise<ProviderView> {
+  const res = await apiFetch(`/providers/${profileId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err?.detail?.code || `更新 Provider 设置失败 (${res.status})`)
+  }
+  return res.json()
+}
+
+export async function updateProviderCredential(
+  profileId: string,
+  apiKey: string,
+): Promise<ProviderView> {
+  const res = await apiFetch(`/providers/${profileId}/credential`, {
+    method: "POST",
+    headers: { "X-GreatOCR-Provider-Key": apiKey },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err?.detail?.code || `设置 API Key 失败 (${res.status})`)
+  }
+  return res.json()
+}
+
+export async function testProviderConnection(
+  profileId: string,
+): Promise<void> {
+  const res = await apiFetch(`/providers/${profileId}/test-connection`, {
+    method: "POST",
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err?.detail?.code || `连接测试失败 (${res.status})`)
   }
 }
 
@@ -193,12 +291,4 @@ export async function openOutput(taskId: string): Promise<void> {
   if (!res.ok) {
     throw new Error(`打开输出目录失败 (${res.status})`)
   }
-}
-
-export async function listProviders(): Promise<ProviderView[]> {
-  const res = await apiFetch("/providers")
-  if (!res.ok) {
-    throw new Error(`获取 Provider 列表失败 (${res.status})`)
-  }
-  return res.json()
 }

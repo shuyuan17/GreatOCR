@@ -5,13 +5,19 @@ import {
   batchDeleteTasks,
   deleteTask,
   getDefaultOutputDir,
+  getPreferences,
   getTask,
   getTaskResultFiles,
   listProviders,
   listTasks,
   openOutput,
   startTask,
+  testProviderConnection,
+  updatePreferences,
+  updateProviderCredential,
+  updateProviderProfile,
   uploadFile,
+  type Preferences,
   type ProviderView,
   type TaskRecord,
   type TaskResultSummary,
@@ -1036,86 +1042,571 @@ function TaskCenterPage() {
 
 function SettingsPage() {
   const [providers, setProviders] = useState<ProviderView[]>([])
+  const [preferences, setPreferences] = useState<Preferences>({})
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState<Record<string, boolean>>({})
+  const [saveMsg, setSaveMsg] = useState("")
+  const [saveMsgType, setSaveMsgType] = useState<"success" | "error">("success")
+  const [connectionTesting, setConnectionTesting] = useState<string | null>(null)
+  const [connectionResult, setConnectionResult] = useState<Record<string, string>>({})
+
+  // Provider form state (per provider)
+  const [providerForms, setProviderForms] = useState<
+    Record<string, { apiKey: string; showKey: boolean; endpoint: string; model: string }>
+  >({})
 
   useEffect(() => {
-    listProviders()
-      .then(setProviders)
+    Promise.all([listProviders(), getPreferences()])
+      .then(([providerList, prefs]) => {
+        setProviders(providerList)
+        setPreferences(prefs)
+        // Initialize provider forms
+        const forms: Record<string, { apiKey: string; showKey: boolean; endpoint: string; model: string }> = {}
+        providerList.forEach((p) => {
+          forms[p.profile_id] = {
+            apiKey: "",
+            showKey: false,
+            endpoint: p.endpoint || "",
+            model: p.model || "",
+          }
+        })
+        setProviderForms(forms)
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+
+  const showSaveMsg = (msg: string, type: "success" | "error" = "success") => {
+    setSaveMsg(msg)
+    setSaveMsgType(type)
+    setTimeout(() => setSaveMsg(""), 3000)
+  }
+
+  const handleSavePreference = async (key: string, value: string) => {
+    setSaving((prev) => ({ ...prev, [key]: true }))
+    try {
+      const updated = await updatePreferences({ [key]: value })
+      setPreferences(updated)
+      showSaveMsg("已保存")
+    } catch (err) {
+      showSaveMsg(err instanceof Error ? err.message : "保存失败", "error")
+    } finally {
+      setSaving((prev) => ({ ...prev, [key]: false }))
+    }
+  }
+
+  const handleSaveProviderSettings = async (profileId: string) => {
+    const form = providerForms[profileId]
+    if (!form) return
+    setSaving((prev) => ({ ...prev, [`provider-${profileId}`]: true }))
+    try {
+      // Save API Key if provided
+      if (form.apiKey.trim()) {
+        await updateProviderCredential(profileId, form.apiKey.trim())
+      }
+      // Save endpoint and model
+      await updateProviderProfile(profileId, {
+        endpoint: form.endpoint || null,
+        model: form.model || null,
+      })
+      // Refresh providers
+      const updatedList = await listProviders()
+      setProviders(updatedList)
+      showSaveMsg("Provider 设置已保存")
+    } catch (err) {
+      showSaveMsg(err instanceof Error ? err.message : "保存 Provider 失败", "error")
+    } finally {
+      setSaving((prev) => ({ ...prev, [`provider-${profileId}`]: false }))
+    }
+  }
+
+  const handleTestConnection = async (profileId: string) => {
+    setConnectionTesting(profileId)
+    setConnectionResult((prev) => ({ ...prev, [profileId]: "" }))
+    try {
+      await testProviderConnection(profileId)
+      setConnectionResult((prev) => ({ ...prev, [profileId]: "success" }))
+    } catch (err) {
+      setConnectionResult((prev) => ({
+        ...prev,
+        [profileId]: err instanceof Error ? err.message : "连接失败",
+      }))
+    } finally {
+      setConnectionTesting(null)
+    }
+  }
+
+  const sectionStyle: CSSProperties = {
+    marginBottom: 32,
+    padding: 20,
+    border: "1px solid #e0e0e0",
+    borderRadius: 10,
+    background: "#fff",
+  }
+
+  const sectionTitleStyle: CSSProperties = {
+    margin: "0 0 16px 0",
+    fontSize: "1.1rem",
+    fontWeight: 600,
+    color: "#333",
+    paddingBottom: 8,
+    borderBottom: "2px solid #e0e0e0",
+  }
+
+  const labelStyle: CSSProperties = {
+    display: "block",
+    marginBottom: 6,
+    fontWeight: 500,
+    color: "#555",
+    fontSize: "0.9rem",
+  }
+
+  const inputStyle: CSSProperties = {
+    width: "100%",
+    fontSize: "0.95rem",
+    padding: "8px 10px",
+    boxSizing: "border-box",
+    border: "1px solid #ccc",
+    borderRadius: 6,
+  }
+
+  const selectStyle: CSSProperties = {
+    ...inputStyle,
+    width: "100%",
+  }
+
+  const checkboxRowStyle: CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  }
+
+  const btnPrimaryStyle: CSSProperties = {
+    padding: "8px 20px",
+    fontSize: "0.9rem",
+    fontWeight: 500,
+    color: "#fff",
+    background: "#1565c0",
+    border: "none",
+    borderRadius: 6,
+    cursor: "pointer",
+  }
+
+  const btnSecondaryStyle: CSSProperties = {
+    padding: "6px 16px",
+    fontSize: "0.85rem",
+    color: "#1565c0",
+    background: "#e3f2fd",
+    border: "1px solid #90caf9",
+    borderRadius: 6,
+    cursor: "pointer",
+  }
+
+  const formGroupStyle: CSSProperties = {
+    marginBottom: 14,
+  }
 
   return (
     <div style={{ padding: "2rem", maxWidth: 800, margin: "0 auto" }}>
       <h2 style={{ marginTop: 0, color: "#333" }}>设置</h2>
 
-      <h3 style={{ color: "#555" }}>OCR Provider</h3>
+      {saveMsg && (
+        <div
+          style={{
+            padding: "10px 16px",
+            marginBottom: 16,
+            borderRadius: 6,
+            background: saveMsgType === "success" ? "#e6f7e6" : "#fde8e8",
+            color: saveMsgType === "success" ? "#2e7d32" : "#c62828",
+            border: `1px solid ${saveMsgType === "success" ? "#a5d6a7" : "#ef9a9a"}`,
+            fontSize: "0.9rem",
+          }}
+        >
+          {saveMsgType === "success" ? "✅ " : "❌ "}
+          {saveMsg}
+        </div>
+      )}
 
       {loading && <div style={{ color: "#888" }}>加载中...</div>}
 
-      {providers.map((provider) => (
-        <div
-          key={provider.profile_id}
-          style={{
-            padding: "12px 16px",
-            marginBottom: 8,
-            border: "1px solid #e0e0e0",
-            borderRadius: 8,
-            background: "#fafafa",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontWeight: 500 }}>{provider.display_name}</span>
-            <span
-              style={{
-                fontSize: "0.8rem",
-                padding: "2px 10px",
-                borderRadius: 12,
-                background: provider.credential.configured ? "#e6f7e6" : "#fde8e8",
-                color: provider.credential.configured ? "#2e7d32" : "#c62828",
-              }}
-            >
-              {provider.credential.configured
-                ? `已配置 ${provider.credential.masked}`
-                : "未配置 API Key"}
-            </span>
-          </div>
-          <div style={{ marginTop: 6, fontSize: "0.85rem", color: "#888" }}>
-            ID: {provider.profile_id} · 类型: {provider.adapter_type}
-          </div>
-        </div>
-      ))}
+      {!loading && (
+        <>
+          {/* ============ 一、OCR Provider ============ */}
+          <div style={sectionStyle}>
+            <h3 style={sectionTitleStyle}>一、OCR Provider</h3>
+            {providers.map((provider) => {
+              const form = providerForms[provider.profile_id]
+              const isTesting = connectionTesting === provider.profile_id
+              const connResult = connectionResult[provider.profile_id]
+              return (
+                <div
+                  key={provider.profile_id}
+                  style={{
+                    padding: 16,
+                    marginBottom: 12,
+                    border: "1px solid #e0e0e0",
+                    borderRadius: 8,
+                    background: "#fafafa",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 12,
+                    }}
+                  >
+                    <span style={{ fontWeight: 600, color: "#333", fontSize: "1rem" }}>
+                      {provider.display_name}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: "0.8rem",
+                        padding: "2px 10px",
+                        borderRadius: 12,
+                        background: provider.credential.configured ? "#e6f7e6" : "#fde8e8",
+                        color: provider.credential.configured ? "#2e7d32" : "#c62828",
+                      }}
+                    >
+                      {provider.credential.configured
+                        ? `已配置 ${provider.credential.masked}`
+                        : "未配置 API Key"}
+                    </span>
+                  </div>
 
-      <div
-        style={{
-          marginTop: 24,
-          padding: 16,
-          border: "1px solid #e0e0e0",
-          borderRadius: 8,
-          background: "#fff3cd",
-        }}
-      >
-        <strong style={{ color: "#856404" }}>如何配置 MinerU API Key</strong>
-        <pre
-          style={{
-            marginTop: 8,
-            padding: 12,
-            background: "#fff",
-            border: "1px solid #ffe082",
-            borderRadius: 6,
-            fontSize: "0.8rem",
-            overflow: "auto",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-{`# 启动后端后执行（替换 YOUR_API_KEY）
-curl -X POST http://127.0.0.1:8399/api/providers \\
-  -H "X-GreatOCR-Token: greatocr-dev-token-2026" \\
-  -H "X-GreatOCR-Provider-Key: YOUR_API_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"profile_id":"mineru-default","display_name":"MinerU","adapter_type":"mineru","endpoint":"https://mineru.net","public":true,"capabilities":{"tables":true,"images":true}}'`}
-        </pre>
-      </div>
+                  {/* API Key */}
+                  <div style={formGroupStyle}>
+                    <label style={labelStyle}>API Key</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input
+                        type={form?.showKey ? "text" : "password"}
+                        value={form?.apiKey || ""}
+                        onChange={(e) =>
+                          setProviderForms((prev) => ({
+                            ...prev,
+                            [provider.profile_id]: {
+                              ...prev[provider.profile_id],
+                              apiKey: e.target.value,
+                            },
+                          }))
+                        }
+                        placeholder={
+                          provider.credential.configured
+                            ? "输入新 API Key 以替换现有密钥"
+                            : "输入 API Key"
+                        }
+                        style={{ ...inputStyle, flex: 1 }}
+                      />
+                      <button
+                        onClick={() =>
+                          setProviderForms((prev) => ({
+                            ...prev,
+                            [provider.profile_id]: {
+                              ...prev[provider.profile_id],
+                              showKey: !prev[provider.profile_id]?.showKey,
+                            },
+                          }))
+                        }
+                        style={{
+                          padding: "8px 12px",
+                          fontSize: "0.85rem",
+                          color: "#555",
+                          background: "#f5f5f5",
+                          border: "1px solid #ccc",
+                          borderRadius: 6,
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={form?.showKey ? "隐藏" : "显示"}
+                      >
+                        {form?.showKey ? "隐藏" : "显示"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Base URL */}
+                  <div style={formGroupStyle}>
+                    <label style={labelStyle}>Base URL</label>
+                    <input
+                      type="text"
+                      value={form?.endpoint || ""}
+                      onChange={(e) =>
+                        setProviderForms((prev) => ({
+                          ...prev,
+                          [provider.profile_id]: {
+                            ...prev[provider.profile_id],
+                            endpoint: e.target.value,
+                          },
+                        }))
+                      }
+                      placeholder={provider.endpoint || "输入 API 端点地址"}
+                      style={inputStyle}
+                    />
+                  </div>
+
+                  {/* Model */}
+                  {provider.profile_id !== "fake-default" && (
+                    <div style={formGroupStyle}>
+                      <label style={labelStyle}>Model</label>
+                      <input
+                        type="text"
+                        value={form?.model || ""}
+                        onChange={(e) =>
+                          setProviderForms((prev) => ({
+                            ...prev,
+                            [provider.profile_id]: {
+                              ...prev[provider.profile_id],
+                              model: e.target.value,
+                            },
+                          }))
+                        }
+                        placeholder={provider.model || "输入模型名称（可选）"}
+                        style={inputStyle}
+                      />
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <button
+                      onClick={() => handleSaveProviderSettings(provider.profile_id)}
+                      disabled={!!saving[`provider-${provider.profile_id}`]}
+                      style={{
+                        ...btnPrimaryStyle,
+                        opacity: saving[`provider-${provider.profile_id}`] ? 0.7 : 1,
+                      }}
+                    >
+                      {saving[`provider-${provider.profile_id}`] ? "保存中..." : "保存"}
+                    </button>
+                    <button
+                      onClick={() => handleTestConnection(provider.profile_id)}
+                      disabled={isTesting || !provider.credential.configured}
+                      style={{
+                        ...btnSecondaryStyle,
+                        opacity: isTesting || !provider.credential.configured ? 0.6 : 1,
+                        cursor:
+                          isTesting || !provider.credential.configured
+                            ? "not-allowed"
+                            : "pointer",
+                      }}
+                    >
+                      {isTesting ? "测试中..." : "测试连接"}
+                    </button>
+                    {connResult && (
+                      <span
+                        style={{
+                          fontSize: "0.85rem",
+                          color: connResult === "success" ? "#2e7d32" : "#c62828",
+                        }}
+                      >
+                        {connResult === "success"
+                          ? "✅ 连接成功"
+                          : `❌ ${connResult}`}
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: "0.8rem",
+                      color: "#999",
+                    }}
+                  >
+                    ID: {provider.profile_id} · 类型: {provider.adapter_type}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* ============ 二、OCR 参数 ============ */}
+          <div style={sectionStyle}>
+            <h3 style={sectionTitleStyle}>二、OCR 参数</h3>
+
+            <div style={formGroupStyle}>
+              <label style={labelStyle} htmlFor="ocr-language">
+                文档语言
+              </label>
+              <select
+                id="ocr-language"
+                value={preferences["ocr_language"] || "auto"}
+                onChange={(e) => handleSavePreference("ocr_language", e.target.value)}
+                style={selectStyle}
+              >
+                <option value="auto">自动</option>
+                <option value="zh">中文</option>
+                <option value="en">英文</option>
+                <option value="ja">日文</option>
+                <option value="other">其它（如 Provider 支持）</option>
+              </select>
+              <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#888" }}>
+                {saving["ocr_language"] ? "保存中..." : ""}
+              </div>
+            </div>
+
+            <div style={checkboxRowStyle}>
+              <input
+                type="checkbox"
+                id="sensitive-mode"
+                checked={preferences["sensitive_file_mode"] === "true"}
+                onChange={(e) =>
+                  handleSavePreference(
+                    "sensitive_file_mode",
+                    e.target.checked ? "true" : "false",
+                  )
+                }
+              />
+              <label htmlFor="sensitive-mode" style={{ fontSize: "0.9rem", color: "#555", cursor: "pointer" }}>
+                敏感文件模式
+              </label>
+            </div>
+          </div>
+
+          {/* ============ 三、PDF 默认设置 ============ */}
+          <div style={sectionStyle}>
+            <h3 style={sectionTitleStyle}>三、PDF 默认设置</h3>
+
+            <div style={checkboxRowStyle}>
+              <input
+                type="checkbox"
+                id="process-all-pages"
+                checked={preferences["pdf_process_all_pages"] !== "false"}
+                onChange={(e) =>
+                  handleSavePreference(
+                    "pdf_process_all_pages",
+                    e.target.checked ? "true" : "false",
+                  )
+                }
+              />
+              <label htmlFor="process-all-pages" style={{ fontSize: "0.9rem", color: "#555", cursor: "pointer" }}>
+                默认处理全部页面
+              </label>
+            </div>
+
+            <div style={formGroupStyle}>
+              <label style={labelStyle} htmlFor="default-page-range">
+                默认页码范围（可为空）
+              </label>
+              <input
+                id="default-page-range"
+                type="text"
+                value={preferences["pdf_default_page_range"] || ""}
+                onChange={(e) =>
+                  handleSavePreference("pdf_default_page_range", e.target.value)
+                }
+                placeholder="例如：1-3,5,7-9"
+                style={inputStyle}
+              />
+              <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#888" }}>
+                {saving["pdf_default_page_range"] ? "保存中..." : "上传时自动带入，但允许用户修改"}
+              </div>
+            </div>
+          </div>
+
+          {/* ============ 四、输出设置 ============ */}
+          <div style={sectionStyle}>
+            <h3 style={sectionTitleStyle}>四、输出设置</h3>
+
+            <div style={formGroupStyle}>
+              <label style={labelStyle} htmlFor="default-output-dir">
+                默认输出目录
+              </label>
+              <input
+                id="default-output-dir"
+                type="text"
+                value={preferences["output_default_dir"] || ""}
+                onChange={(e) =>
+                  handleSavePreference("output_default_dir", e.target.value)
+                }
+                placeholder="默认输出目录路径"
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={checkboxRowStyle}>
+              <input
+                type="checkbox"
+                id="same-as-input"
+                checked={preferences["output_same_as_input"] === "true"}
+                onChange={(e) =>
+                  handleSavePreference(
+                    "output_same_as_input",
+                    e.target.checked ? "true" : "false",
+                  )
+                }
+              />
+              <label htmlFor="same-as-input" style={{ fontSize: "0.9rem", color: "#555", cursor: "pointer" }}>
+                默认与输入文件同目录
+              </label>
+            </div>
+            {preferences["output_same_as_input"] === "true" && (
+              <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#888" }}>
+                开启后，自动使用：输入目录/GreatOCR_Output/
+              </div>
+            )}
+          </div>
+
+          {/* ============ 五、结果设置 ============ */}
+          <div style={sectionStyle}>
+            <h3 style={sectionTitleStyle}>五、结果设置</h3>
+
+            <div style={checkboxRowStyle}>
+              <input
+                type="checkbox"
+                id="export-docx"
+                checked={preferences["result_export_docx"] !== "false"}
+                onChange={(e) =>
+                  handleSavePreference(
+                    "result_export_docx",
+                    e.target.checked ? "true" : "false",
+                  )
+                }
+              />
+              <label htmlFor="export-docx" style={{ fontSize: "0.9rem", color: "#555", cursor: "pointer" }}>
+                默认导出 DOCX
+              </label>
+            </div>
+
+            <div style={checkboxRowStyle}>
+              <input
+                type="checkbox"
+                id="generate-quality-report"
+                checked={preferences["result_generate_quality_report"] !== "false"}
+                onChange={(e) =>
+                  handleSavePreference(
+                    "result_generate_quality_report",
+                    e.target.checked ? "true" : "false",
+                  )
+                }
+              />
+              <label htmlFor="generate-quality-report" style={{ fontSize: "0.9rem", color: "#555", cursor: "pointer" }}>
+                生成 Quality Report
+              </label>
+            </div>
+          </div>
+
+          {/* ============ 六、配置管理 ============ */}
+          <div style={sectionStyle}>
+            <h3 style={sectionTitleStyle}>六、配置管理</h3>
+            <div style={{ fontSize: "0.9rem", color: "#555", lineHeight: 1.8 }}>
+              <p style={{ margin: 0 }}>
+                ✅ 所有配置已持久化保存到本地 SQLite 数据库。
+              </p>
+              <p style={{ margin: "4px 0" }}>
+                ✅ 重启程序后仍然有效。
+              </p>
+              <p style={{ margin: "4px 0" }}>
+                ✅ 配置仅保存在本机，不会写入 Git 仓库。
+              </p>
+              <p style={{ margin: "4px 0" }}>
+                ✅ API Key 存储在操作系统凭据管理器（keyring）中，不进入 Git。
+              </p>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
