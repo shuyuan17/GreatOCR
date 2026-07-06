@@ -205,7 +205,7 @@ function NewTaskPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [providers, setProviders] = useState<ProviderView[]>([])
-  const [selectedProvider, setSelectedProvider] = useState("fake-default")
+  const [selectedProvider, setSelectedProvider] = useState("")
   const [pageRange, setPageRange] = useState("")
   const [outputDir, setOutputDir] = useState("")
   const [phase, setPhase] = useState<
@@ -299,10 +299,9 @@ function NewTaskPage() {
     }
   }
 
-  const providerReady =
-    selectedProvider === "fake-default" ||
-    providers.find((provider) => provider.profile_id === selectedProvider)?.credential
-      ?.configured
+  const providerReady = !!providers.find(
+    (provider) => provider.profile_id === selectedProvider,
+  )?.credential?.configured
 
   const statusStyle: CSSProperties = {
     marginTop: 16,
@@ -408,7 +407,7 @@ function NewTaskPage() {
             </option>
           ))}
         </select>
-        {selectedProvider !== "fake-default" && !providerReady && (
+        {selectedProvider && !providerReady && (
           <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#c62828" }}>
             当前 Provider 未配置 API Key，请先在设置中完成配置。
           </div>
@@ -441,7 +440,7 @@ function NewTaskPage() {
 
       <button
         onClick={handleSubmit}
-        disabled={!file || phase !== "idle" || (!providerReady && selectedProvider !== "fake-default")}
+        disabled={!file || !selectedProvider || phase !== "idle" || !providerReady}
         style={{
           padding: "10px 28px",
           fontSize: "1rem",

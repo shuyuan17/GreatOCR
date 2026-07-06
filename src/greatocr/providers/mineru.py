@@ -189,3 +189,28 @@ class MinerUDocumentParser(DocumentParser):
     def _ensure_success_code(payload: dict) -> None:
         if payload.get("code", 0) != 0:
             raise ProviderJobFailed(payload.get("msg", "MinerU request failed"))
+
+
+def probe_mineru_connection(
+    config: MinerUConfig,
+    *,
+    client: httpx.Client | None = None,
+) -> None:
+    probe_client = client or httpx.Client(timeout=15)
+    response = probe_client.post(
+        config.base_url.rstrip("/") + "/api/v4/file-urls/batch",
+        headers={
+            "Authorization": f"Bearer {config.api_key.get_secret_value()}",
+        },
+        json={
+            "files": [
+                {
+                    "name": "greatocr-connection-test.pdf",
+                    "data_id": "greatocr-connection-test.pdf",
+                }
+            ]
+        },
+    )
+    response.raise_for_status()
+    payload = response.json()
+    MinerUDocumentParser._ensure_success_code(payload)

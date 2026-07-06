@@ -15,8 +15,15 @@ def require_local_session(request: Request) -> None:
         )
 
     origin = request.headers.get("Origin")
-    if origin is not None and origin != request.app.state.allowed_origin:
+    if origin is not None and not _origin_matches_allowed_loopback(
+        origin,
+        request.app.state.allowed_origin,
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "ORIGIN_NOT_ALLOWED"},
         )
+
+
+def _origin_matches_allowed_loopback(origin: str, allowed_origin: str) -> bool:
+    return origin.rstrip("/") == allowed_origin.rstrip("/")

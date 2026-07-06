@@ -14,14 +14,17 @@ from greatocr.app.routes.tasks import router as tasks_router
 
 
 api_router = APIRouter()
+health_router = APIRouter()
+
+
+@health_router.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 api_router.include_router(preferences_router)
 api_router.include_router(providers_router)
 api_router.include_router(tasks_router)
-
-
-@api_router.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
 
 
 def create_app(
@@ -67,6 +70,7 @@ def create_app(
     app.state.provider_connection_tester = provider_connection_tester
     app.state.task_service = task_service
     app.state.upload_dir = Path(upload_dir) if upload_dir else None
+    app.include_router(health_router, prefix="/api")
     app.include_router(
         api_router,
         prefix="/api",

@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -11,7 +12,7 @@ function makeTask(overrides: Record<string, unknown> = {}) {
     source_path: "C:/docs/sample.pdf",
     sensitive: false,
     selected_pages: [1, 2, 3],
-    provider_profile_id: "fake-default",
+    provider_profile_id: "mineru-default",
     approved_fallback_ids: [],
     status: "succeeded",
     output_dir: "C:/output/task-1",
@@ -58,14 +59,15 @@ function makeResultSummary(
 
 const providerList = [
   {
-    profile_id: "fake-default",
-    display_name: "Fake Provider",
-    adapter_type: "fake",
-    endpoint: null,
-    public: false,
+    profile_id: "mineru-default",
+    display_name: "MinerU",
+    adapter_type: "mineru",
+    endpoint: "https://mineru.net",
+    model: null,
+    public: true,
     capabilities: {},
     approved_fallback_ids: [],
-    credential: { configured: true, masked: null },
+    credential: { configured: true, masked: "********1234" },
   },
 ]
 

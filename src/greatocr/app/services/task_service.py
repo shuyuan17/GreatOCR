@@ -52,7 +52,7 @@ class TaskService:
         return updated
 
     def default_output_dir(self) -> Path:
-        path = self.database.path.parent / "data" / "exports"
+        path = self.database.path.parent / "exports"
         path.mkdir(parents=True, exist_ok=True)
         return path
 

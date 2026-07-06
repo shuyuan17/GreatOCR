@@ -11,6 +11,7 @@ from greatocr.app.schemas import NewTask
 from greatocr.app.services.credentials import (
     CredentialNotConfigured,
     CredentialService,
+    JsonCredentialBackend,
 )
 
 
@@ -56,6 +57,21 @@ def test_credential_service_rejects_blank_secret(fake_keyring: FakeKeyring) -> N
 
     with pytest.raises(ValueError, match="cannot be empty"):
         service.set("mineru-default", "   ")
+
+
+def test_json_credential_backend_persists_secret(tmp_path: Path) -> None:
+    storage_path = tmp_path / "user-config" / "credentials.json"
+
+    first = CredentialService(JsonCredentialBackend(storage_path))
+    first.set("mineru-default", "persisted-secret-1234")
+
+    second = CredentialService(JsonCredentialBackend(storage_path))
+
+    assert second.status("mineru-default").model_dump() == {
+        "configured": True,
+        "masked": "********1234",
+    }
+    assert second.resolve("mineru-default").get_secret_value() == "persisted-secret-1234"
 
 
 @pytest.fixture

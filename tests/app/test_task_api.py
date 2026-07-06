@@ -262,13 +262,13 @@ def test_task_result_download_returns_not_found_for_missing_file(api) -> None:
     assert response.json()["detail"]["code"] == "RESULT_FILE_NOT_FOUND"
 
 
-def test_default_output_dir_uses_data_exports(api) -> None:
+def test_default_output_dir_uses_exports_folder(api) -> None:
     client, _, _, tmp_path = api
 
     response = client.get("/api/tasks/default-output-dir", headers=headers())
 
     assert response.status_code == 200
-    assert response.json()["output_dir"] == str(tmp_path / "data" / "exports")
+    assert response.json()["output_dir"] == str(tmp_path / "exports")
 
 
 def test_upload_file_accepts_custom_output_dir(api) -> None:

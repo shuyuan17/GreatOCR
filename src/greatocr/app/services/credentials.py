@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, SecretStr
@@ -22,6 +24,42 @@ class CredentialStatus(BaseModel):
 
 class CredentialNotConfigured(RuntimeError):
     pass
+
+
+class JsonCredentialBackend:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        payload = self._load()
+        payload.setdefault(service, {})[username] = password
+        self._save(payload)
+
+    def get_password(self, service: str, username: str) -> str | None:
+        return self._load().get(service, {}).get(username)
+
+    def delete_password(self, service: str, username: str) -> None:
+        payload = self._load()
+        service_values = payload.get(service, {})
+        if username in service_values:
+            del service_values[username]
+            if service_values:
+                payload[service] = service_values
+            else:
+                payload.pop(service, None)
+            self._save(payload)
+
+    def _load(self) -> dict[str, dict[str, str]]:
+        if not self.path.exists():
+            return {}
+        return json.loads(self.path.read_text(encoding="utf-8"))
+
+    def _save(self, payload: dict[str, dict[str, str]]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
 
 class CredentialService:

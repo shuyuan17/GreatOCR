@@ -9,6 +9,7 @@ build/
 dist/
 frontend/node_modules/
 frontend/dist/
+.greatocr-installed
 .superpowers/
 .worktrees/
 testsamples/
@@ -37,3 +38,18 @@ node_modules/
 .env.local
 
 docs/superpowers/
+# Temp
+.tmp*
+.tmp_release/
+
+# WorkBuddy
+.workbuddy/
+
+# Local packages
+*.zip
+
+# Windows logs
+*.log
+
+# Local notes
+*.txt

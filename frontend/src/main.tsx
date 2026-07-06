@@ -3,40 +3,53 @@ import { createRoot } from "react-dom/client"
 import { BrowserRouter } from "react-router-dom"
 
 import { App } from "./App"
+import { resolveSessionToken } from "./sessionToken"
 
-/* ------------------------------------------------------------------ */
-/*  Session token setup                                                */
-/* ------------------------------------------------------------------ */
+const root = createRoot(document.getElementById("root")!)
 
-const TOKEN_FROM_ENV = import.meta.env.VITE_GREAT_OCR_TOKEN
+try {
+  window.__GREAT_OCR_TOKEN__ = resolveSessionToken(import.meta.env.VITE_GREAT_OCR_TOKEN)
 
-/**
- * Use the token from env (`.env.development`) if set, otherwise generate
- * a random hex token.  The backend must be started with the same token.
- */
-window.__GREAT_OCR_TOKEN__ =
-  TOKEN_FROM_ENV || generateSessionToken()
-
-function generateSessionToken(): string {
-  const bytes = new Uint8Array(32)
-  crypto.getRandomValues(bytes)
-  const token = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
-  console.log(
-    "%c[GreatOCR] Generated session token (set VITE_GREAT_OCR_TOKEN to use a fixed one):",
-    "color: #1565c0; font-weight: bold",
+  root.render(
+    <StrictMode>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </StrictMode>,
   )
-  console.log(`  %c${token}`, "color: #2e7d32; font-weight: bold")
-  return token
+} catch (error) {
+  const message =
+    error instanceof Error
+      ? error.message
+      : "GreatOCR startup failed. Please restart via start.bat."
+
+  root.render(
+    <StrictMode>
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+          background: "#fffaf5",
+          color: "#8a2d1c",
+          padding: "2rem",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 640,
+            background: "#fff",
+            border: "1px solid #f3c7bf",
+            borderRadius: 12,
+            padding: "1.5rem",
+            boxShadow: "0 8px 24px rgba(0, 0, 0, 0.06)",
+          }}
+        >
+          <h1 style={{ marginTop: 0, fontSize: "1.4rem" }}>GreatOCR 启动失败</h1>
+          <p style={{ marginBottom: 0, lineHeight: 1.7 }}>{message}</p>
+        </div>
+      </div>
+    </StrictMode>,
+  )
 }
-
-/* ------------------------------------------------------------------ */
-/*  Render                                                             */
-/* ------------------------------------------------------------------ */
-
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
-  </StrictMode>,
-)

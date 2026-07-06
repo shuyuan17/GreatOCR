@@ -264,7 +264,7 @@ async def upload_and_create_task(
     request: Request,
     file: UploadFile = File(...),
     sensitive: bool = Form(False),
-    provider_profile_id: str = Form("fake-default"),
+    provider_profile_id: str = Form("mineru-default"),
     pages: str = Form(""),
     output_dir: str = Form(""),
     approved_fallback_ids: str = Form(""),

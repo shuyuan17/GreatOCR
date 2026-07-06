@@ -1,53 +1,96 @@
-// GreatOCR frontend dependency installer
-// Runs via node.exe -- no .cmd batch wrappers involved
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(__dirname, "..");
 const frontendDir = resolve(rootDir, "frontend");
-const registry = "https://registry.npmmirror.com";
+const nodeModulesDir = resolve(frontendDir, "node_modules");
+const nodeExe = process.execPath;
+const npmCli = resolve(dirname(nodeExe), "node_modules", "npm", "bin", "npm-cli.js");
 
-function run(cmd, opts = {}) {
-  execSync(cmd, {
+const registries = [
+  "https://registry.npmmirror.com",
+  "https://registry.npmjs.org",
+];
+
+function runNodeCli(cliPath, args, cwd) {
+  execFileSync(nodeExe, [cliPath, ...args], {
+    cwd,
     stdio: "inherit",
-    shell: "cmd.exe",
-    cwd: rootDir,
     timeout: 10 * 60 * 1000,
-    ...opts,
   });
 }
 
-// Step 1: Check if already installed
-process.chdir(frontendDir);
-if (existsSync("node_modules")) {
+function readNodeCli(cliPath, args, cwd) {
+  return execFileSync(nodeExe, [cliPath, ...args], {
+    cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf-8",
+    timeout: 60 * 1000,
+  }).trim();
+}
+
+function findPnpmCli() {
+  try {
+    const globalRoot = readNodeCli(npmCli, ["root", "-g"], rootDir);
+    const pnpmCli = resolve(globalRoot, "pnpm", "bin", "pnpm.cjs");
+    return existsSync(pnpmCli) ? pnpmCli : null;
+  } catch {
+    return null;
+  }
+}
+
+function ensurePnpm() {
+  const existing = findPnpmCli();
+  if (existing) {
+    console.log("    pnpm already installed. Skipping.");
+    return existing;
+  }
+
+  console.log("    Installing pnpm...");
+  for (const registry of registries) {
+    try {
+      runNodeCli(npmCli, ["install", "-g", "pnpm", "--registry", registry], rootDir);
+      const installed = findPnpmCli();
+      if (installed) {
+        return installed;
+      }
+    } catch {
+      console.log(`    Registry ${registry} failed, trying next...`);
+    }
+  }
+
+  throw new Error("Could not install pnpm.");
+}
+
+if (existsSync(nodeModulesDir)) {
   console.log("    Frontend dependencies already installed. Skipping.");
   process.exit(0);
 }
 
-// Step 2: Find node dir for npm-cli.js (avoids npm.cmd wrapper)
-const nodeDir = resolve(process.execPath, "..");
-const npmCli = resolve(nodeDir, "node_modules", "npm", "bin", "npm-cli.js");
+const pnpmCli = ensurePnpm();
 
-// Step 3: Install pnpm via node-run npm (no .cmd wrapper)
-console.log("    Installing pnpm...");
-try {
-  run(`"${process.execPath}" "${npmCli}" install -g pnpm --registry ${registry}`);
-} catch {
-  console.error("    [ERROR] Failed to install pnpm.");
-  console.error("    Try manually: npm install -g pnpm");
-  process.exit(1);
+console.log("    Installing frontend dependencies...");
+let installOk = false;
+for (const registry of registries) {
+  try {
+    runNodeCli(
+      pnpmCli,
+      ["install", "--dir", frontendDir, "--registry", registry],
+      rootDir,
+    );
+    installOk = true;
+    break;
+  } catch {
+    console.log(`    Registry ${registry} failed, trying next...`);
+  }
 }
 
-// Step 4: Install frontend dependencies via pnpm
-console.log("    Installing frontend dependencies...");
-try {
-  run(`pnpm install --registry ${registry}`, { cwd: frontendDir });
-} catch {
+if (!installOk) {
   console.error("    [ERROR] Frontend dependency installation failed.");
-  console.error("    Possible causes: network issue.");
+  console.error("    Check your internet connection and run install.bat again.");
   process.exit(1);
 }
 
