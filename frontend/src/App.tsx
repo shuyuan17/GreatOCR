@@ -33,10 +33,15 @@ import {
   DEFAULT_TRANSLATION_PROVIDER,
   DEFAULT_TARGET_LANGUAGE,
   DEFAULT_TRANSLATION_MODE,
+  DEFAULT_WORKFLOW_CONFIG,
   SENSITIVE_OPTIONS,
   TARGET_LANGUAGES,
   TRANSLATION_MODES,
+  getOcrProviderOptions,
+  getProviderById,
+  getTranslationProviderOptions,
   type AiModeValue,
+  type AiProviderCatalogEntry,
   type SensitiveValue,
   type TargetLanguage,
   type TranslationMode,
@@ -332,6 +337,25 @@ function NewTaskPage() {
     AI_PROCESSING_MODES.find((mode) => mode.value === aiMode) ??
     AI_PROCESSING_MODES[0]
 
+  // 当前工作流（与 Settings 默认工作流配置共用同一份前端状态）。
+  const ocrProvider = getProviderById(DEFAULT_WORKFLOW_CONFIG.ocrProviderId)
+  const translationProvider = getProviderById(
+    DEFAULT_WORKFLOW_CONFIG.translationProviderId,
+  )
+  const ocrProviderName = ocrProvider?.displayName ?? DEFAULT_OCR_PROVIDER
+  const translationProviderName =
+    translationProvider?.displayName ?? DEFAULT_TRANSLATION_PROVIDER
+
+  // 敏感文件前端校验：检查本次会使用的 Provider 是否允许处理敏感文件。
+  const usedProviders: AiProviderCatalogEntry[] = (
+    aiMode === "translation"
+      ? [ocrProvider, translationProvider]
+      : [ocrProvider]
+  ).filter((provider): provider is AiProviderCatalogEntry => !!provider)
+  const sensitiveBlocked =
+    sensitive === "yes" &&
+    usedProviders.some((provider) => !provider.sensitiveAllowed)
+
   const statusStyle: CSSProperties = {
     marginTop: 16,
     padding: "12px 16px",
@@ -448,11 +472,11 @@ function NewTaskPage() {
           htmlFor="ai-mode-select"
           style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
         >
-          AI Processing Mode
+          Processing Mode
         </label>
         <select
           id="ai-mode-select"
-          aria-label="AI Processing Mode"
+          aria-label="Processing Mode"
           value={aiMode}
           disabled={phase !== "idle"}
           onChange={(event) => setAiMode(event.target.value as AiModeValue)}
@@ -542,22 +566,6 @@ function NewTaskPage() {
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <div style={{ marginBottom: 6, fontWeight: 500, color: "#555" }}>
-          Current Workflow
-        </div>
-        <div style={{ fontSize: "0.95rem", color: "#333", marginBottom: 4 }}>
-          OCR Provider: {DEFAULT_OCR_PROVIDER}
-        </div>
-        <div style={{ fontSize: "0.95rem", color: "#333" }}>
-          Translation Provider:{" "}
-          {aiMode === "translation" ? DEFAULT_TRANSLATION_PROVIDER : "Not used"}
-        </div>
-        <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#666" }}>
-          Providers are configured in <Link to="/settings">Settings</Link>.
-        </div>
-      </div>
-
-      <div style={{ marginBottom: 16 }}>
         <label
           htmlFor="output-dir"
           style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
@@ -581,9 +589,71 @@ function NewTaskPage() {
         />
       </div>
 
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 6, fontWeight: 500, color: "#555" }}>
+          Output Preview
+        </div>
+        <ul
+          style={{
+            margin: 0,
+            paddingLeft: 20,
+            fontSize: "0.9rem",
+            color: "#333",
+            lineHeight: 1.8,
+          }}
+        >
+          {aiMode === "translation" ? (
+            <>
+              <li>result.docx</li>
+              <li>translated_result.docx</li>
+            </>
+          ) : (
+            <li>result.docx</li>
+          )}
+        </ul>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 6, fontWeight: 500, color: "#555" }}>
+          当前工作流
+        </div>
+        <div style={{ fontSize: "0.95rem", color: "#333", marginBottom: 4 }}>
+          OCR Provider：{ocrProviderName}
+        </div>
+        <div style={{ fontSize: "0.95rem", color: "#333" }}>
+          Translation Provider：
+          {aiMode === "translation" ? translationProviderName : "未启用"}
+        </div>
+        <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#666" }}>
+          新建任务页会使用设置中选择的默认 Provider。
+        </div>
+      </div>
+
+      {sensitiveBlocked && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: "10px 14px",
+            borderRadius: 8,
+            background: "#fde8e8",
+            color: "#c62828",
+            fontSize: "0.85rem",
+            lineHeight: 1.6,
+          }}
+        >
+          当前工作流包含不允许处理敏感文件的 AI Provider，请到设置中选择允许处理敏感文件的 Provider。
+        </div>
+      )}
+
       <button
         onClick={handleSubmit}
-        disabled={!file || !selectedProvider || phase !== "idle" || !providerReady}
+        disabled={
+          !file ||
+          !selectedProvider ||
+          phase !== "idle" ||
+          !providerReady ||
+          sensitiveBlocked
+        }
         style={{
           padding: "10px 28px",
           fontSize: "1rem",
@@ -1276,6 +1346,16 @@ function SettingsPage() {
   const [connectionResult, setConnectionResult] = useState<Record<string, string>>({})
   const [addProviderNotice, setAddProviderNotice] = useState("")
 
+  // 默认工作流配置（UI 前端状态，本任务不持久化 / 不写后端）。
+  const [defaultOcrProviderId, setDefaultOcrProviderId] = useState(
+    DEFAULT_WORKFLOW_CONFIG.ocrProviderId,
+  )
+  const [defaultTranslationProviderId, setDefaultTranslationProviderId] = useState(
+    DEFAULT_WORKFLOW_CONFIG.translationProviderId,
+  )
+  const ocrProviderOptions = getOcrProviderOptions()
+  const translationProviderOptions = getTranslationProviderOptions()
+
   // Provider form state (per provider)
   const [providerForms, setProviderForms] = useState<
     Record<string, { apiKey: string; showKey: boolean; endpoint: string; model: string }>
@@ -1487,7 +1567,7 @@ function SettingsPage() {
         <>
           {/* ============ 一、AI Provider Library ============ */}
           <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>一、AI Provider Library</h3>
+            <h3 style={sectionTitleStyle}>一、AI Provider 库</h3>
 
             {displayProviders.map((entry) => {
               const real = entry.real
@@ -1785,22 +1865,52 @@ function SettingsPage() {
 
           {/* ============ 二、Default Workflow Configuration ============ */}
           <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>二、Default Workflow Configuration</h3>
+            <h3 style={sectionTitleStyle}>二、默认工作流配置</h3>
 
             <div style={formGroupStyle}>
-              <label style={labelStyle}>Default OCR Provider</label>
-              <div style={{ fontSize: "0.95rem", color: "#333" }}>{DEFAULT_OCR_PROVIDER}</div>
+              <label style={labelStyle} htmlFor="default-ocr-provider">
+                默认 OCR Provider
+              </label>
+              <select
+                id="default-ocr-provider"
+                aria-label="默认 OCR Provider"
+                value={defaultOcrProviderId}
+                onChange={(event) => setDefaultOcrProviderId(event.target.value)}
+                style={selectStyle}
+              >
+                {ocrProviderOptions.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.displayName}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div style={formGroupStyle}>
-              <label style={labelStyle}>Default Translation Provider</label>
-              <div style={{ fontSize: "0.95rem", color: "#333" }}>{DEFAULT_TRANSLATION_PROVIDER}</div>
+              <label style={labelStyle} htmlFor="default-translation-provider">
+                默认翻译 Provider
+              </label>
+              <select
+                id="default-translation-provider"
+                aria-label="默认翻译 Provider"
+                value={defaultTranslationProviderId}
+                onChange={(event) =>
+                  setDefaultTranslationProviderId(event.target.value)
+                }
+                style={selectStyle}
+              >
+                {translationProviderOptions.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.displayName}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div style={{ fontSize: "0.8rem", color: "#666", lineHeight: 1.6 }}>
-              New Task page will use these defaults.
+              新建任务页会使用这里选择的默认 Provider。
               <br />
-              若开启敏感文件，仅允许选择 Sensitive File Allowed 的 Provider。
+              如果任务标记为敏感文件，只允许使用标记为“允许处理敏感文件”的 Provider。
             </div>
           </div>
 

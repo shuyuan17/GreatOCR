@@ -273,7 +273,76 @@ describe("GreatOCR application shell", () => {
   })
 })
 
-describe("New Task page - AI Processing UI", () => {
+describe("Settings page - AI Provider 库 & 默认工作流配置", () => {
+  beforeEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+    apiModule.listProviders.mockResolvedValue(providerList)
+    apiModule.listTasks.mockResolvedValue([])
+    apiModule.getDefaultOutputDir.mockResolvedValue({
+      output_dir: "D:/repo/data/exports",
+    })
+  })
+
+  function renderSettings() {
+    return render(
+      <MemoryRouter initialEntries={["/settings"]}>
+        <App />
+      </MemoryRouter>,
+    )
+  }
+
+  it("shows 一、AI Provider 库", async () => {
+    renderSettings()
+    expect(await screen.findByText("一、AI Provider 库")).toBeInTheDocument()
+  })
+
+  it("shows 二、默认工作流配置", async () => {
+    renderSettings()
+    expect(await screen.findByText("二、默认工作流配置")).toBeInTheDocument()
+  })
+
+  it("default OCR Provider is a dropdown", async () => {
+    renderSettings()
+    const select = (await screen.findByLabelText(
+      "默认 OCR Provider",
+    )) as HTMLSelectElement
+    expect(select.tagName).toBe("SELECT")
+  })
+
+  it("default OCR Provider dropdown only lists OCR-capable providers", async () => {
+    renderSettings()
+    const select = (await screen.findByLabelText(
+      "默认 OCR Provider",
+    )) as HTMLSelectElement
+    const optionTexts = Array.from(select.options).map((o) => o.textContent)
+    // MinerU 具备 OCR 能力；DeepSeek / coming soon 的 Provider 不应出现。
+    expect(optionTexts).toEqual(["MinerU"])
+    expect(optionTexts).not.toContain("DeepSeek")
+    expect(optionTexts).not.toContain("Azure Document Intelligence")
+  })
+
+  it("default translation Provider is a dropdown", async () => {
+    renderSettings()
+    const select = (await screen.findByLabelText(
+      "默认翻译 Provider",
+    )) as HTMLSelectElement
+    expect(select.tagName).toBe("SELECT")
+  })
+
+  it("default translation Provider dropdown only lists Translation-capable providers", async () => {
+    renderSettings()
+    const select = (await screen.findByLabelText(
+      "默认翻译 Provider",
+    )) as HTMLSelectElement
+    const optionTexts = Array.from(select.options).map((o) => o.textContent)
+    // DeepSeek 具备 Translation 能力；MinerU / coming soon 的 Provider 不应出现。
+    expect(optionTexts).toEqual(["DeepSeek"])
+    expect(optionTexts).not.toContain("MinerU")
+  })
+})
+
+describe("New Task page - AI Processing workflow", () => {
   beforeEach(() => {
     cleanup()
     vi.clearAllMocks()
@@ -290,6 +359,14 @@ describe("New Task page - AI Processing UI", () => {
         <App />
       </MemoryRouter>,
     )
+  }
+
+  function selectPdf() {
+    fireEvent.change(screen.getByLabelText("选择文件"), {
+      target: {
+        files: [new File(["pdf"], "sample.pdf", { type: "application/pdf" })],
+      },
+    })
   }
 
   it("shows the AI Processing title and subtitle", () => {
@@ -311,9 +388,9 @@ describe("New Task page - AI Processing UI", () => {
     ).toBeInTheDocument()
   })
 
-  it("shows AI Processing Mode defaulting to OCR Only", () => {
+  it("shows Processing Mode defaulting to OCR Only", () => {
     renderNewTask()
-    const mode = screen.getByLabelText("AI Processing Mode") as HTMLSelectElement
+    const mode = screen.getByLabelText("Processing Mode") as HTMLSelectElement
     expect(mode).toBeInTheDocument()
     // 默认：OCR Only
     expect(mode.value).toBe("ocr")
@@ -322,9 +399,9 @@ describe("New Task page - AI Processing UI", () => {
     expect(screen.getByText("仅执行 OCR，生成 result.docx")).toBeInTheDocument()
   })
 
-  it("switches to Translation and reveals translation config", async () => {
+  it("switches to OCR + Translation and reveals translation config", async () => {
     renderNewTask()
-    const mode = screen.getByLabelText("AI Processing Mode") as HTMLSelectElement
+    const mode = screen.getByLabelText("Processing Mode") as HTMLSelectElement
     fireEvent.change(mode, { target: { value: "translation" } })
     expect(mode.value).toBe("translation")
 
@@ -352,22 +429,65 @@ describe("New Task page - AI Processing UI", () => {
     ).toBeInTheDocument()
   })
 
-  it("shows Current Workflow with OCR provider and Not used for translation in OCR Only mode", async () => {
+  it("shows 当前工作流 section", () => {
     renderNewTask()
-    expect(await screen.findByText("Current Workflow")).toBeInTheDocument()
-    expect(screen.getByText(/OCR Provider: MinerU/)).toBeInTheDocument()
-    // OCR Only 默认：Translation Provider = Not used
-    expect(screen.getByText(/Not used/)).toBeInTheDocument()
-    expect(screen.getByText(/Providers are configured in/)).toBeInTheDocument()
+    expect(screen.getByText("当前工作流")).toBeInTheDocument()
+    expect(screen.getByText(/OCR Provider：MinerU/)).toBeInTheDocument()
   })
 
-  it("shows DeepSeek as Translation Provider when Translation mode is selected", async () => {
+  it("OCR Only shows 未启用 for Translation Provider", () => {
     renderNewTask()
-    const mode = screen.getByLabelText("AI Processing Mode") as HTMLSelectElement
+    // 默认 OCR Only：Translation Provider 显示 未启用
+    expect(screen.getByText(/未启用/)).toBeInTheDocument()
+    expect(screen.queryByText(/DeepSeek/)).not.toBeInTheDocument()
+  })
+
+  it("OCR + Translation shows DeepSeek for Translation Provider", async () => {
+    renderNewTask()
+    const mode = screen.getByLabelText("Processing Mode") as HTMLSelectElement
     fireEvent.change(mode, { target: { value: "translation" } })
-    expect(await screen.findByText(/Translation Provider: DeepSeek/)).toBeInTheDocument()
-    // 切换到 Translation 后，不应再显示 Not used
-    expect(screen.queryByText(/Not used/)).not.toBeInTheDocument()
+    expect(await screen.findByText(/DeepSeek/)).toBeInTheDocument()
+    // 切换到 OCR + Translation 后，不应再显示 未启用
+    expect(screen.queryByText(/未启用/)).not.toBeInTheDocument()
+  })
+
+  it("shows warning and disables submit when sensitive file = 是 with disallowed providers", async () => {
+    renderNewTask()
+    selectPdf()
+    // 等待 Provider 加载完成，默认（敏感文件=否）按钮可用，证明禁用来自敏感校验
+    await waitFor(() => {
+      const btn = screen.getByRole("button", {
+        name: "开始 OCR",
+      }) as HTMLButtonElement
+      expect(btn.disabled).toBe(false)
+    })
+
+    const sensitive = screen.getByLabelText("是否敏感文件？") as HTMLSelectElement
+    fireEvent.change(sensitive, { target: { value: "yes" } })
+
+    // 默认 Provider（MinerU / DeepSeek）均不允许敏感文件，应显示警告并禁用按钮
+    expect(
+      screen.getByText(
+        /当前工作流包含不允许处理敏感文件的 AI Provider/,
+      ),
+    ).toBeInTheDocument()
+
+    const submit = screen.getByRole("button", {
+      name: "开始 OCR",
+    }) as HTMLButtonElement
+    expect(submit.disabled).toBe(true)
+
+    // 切回“否”后恢复可用
+    fireEvent.change(sensitive, { target: { value: "no" } })
+    expect(submit.disabled).toBe(false)
+  })
+
+  it("OCR + Translation shows translated_result.docx in Output Preview", async () => {
+    renderNewTask()
+    const mode = screen.getByLabelText("Processing Mode") as HTMLSelectElement
+    fireEvent.change(mode, { target: { value: "translation" } })
+    expect(await screen.findByText("translated_result.docx")).toBeInTheDocument()
+    expect(screen.getByText("result.docx")).toBeInTheDocument()
   })
 
   it("changes the submit button label with the AI mode", async () => {
@@ -376,7 +496,7 @@ describe("New Task page - AI Processing UI", () => {
       screen.getByRole("button", { name: "开始 OCR" }),
     ).toBeInTheDocument()
 
-    const mode = screen.getByLabelText("AI Processing Mode") as HTMLSelectElement
+    const mode = screen.getByLabelText("Processing Mode") as HTMLSelectElement
     fireEvent.change(mode, { target: { value: "translation" } })
 
     expect(
@@ -408,7 +528,7 @@ describe("Settings page - AI Provider Library & Default Workflow", () => {
 
   it("shows the AI Provider Library section", async () => {
     renderSettings()
-    expect(await screen.findByText(/AI Provider Library/)).toBeInTheDocument()
+    expect(await screen.findByText("一、AI Provider 库")).toBeInTheDocument()
   })
 
   it("shows the MinerU provider", async () => {
@@ -424,7 +544,7 @@ describe("Settings page - AI Provider Library & Default Workflow", () => {
   it("does not show the Fake Provider", async () => {
     renderSettings()
     // fake-default 应被过滤，正式 UI 不展示。
-    expect(await screen.findByText(/AI Provider Library/)).toBeInTheDocument()
+    expect(await screen.findByText("一、AI Provider 库")).toBeInTheDocument()
     expect(screen.queryByText("Fake Provider")).not.toBeInTheDocument()
   })
 
@@ -444,10 +564,12 @@ describe("Settings page - AI Provider Library & Default Workflow", () => {
 
   it("shows the Default Workflow Configuration section", async () => {
     renderSettings()
-    expect(await screen.findByText(/Default Workflow Configuration/)).toBeInTheDocument()
-    expect(screen.getByText("Default OCR Provider")).toBeInTheDocument()
-    expect(screen.getByText("Default Translation Provider")).toBeInTheDocument()
-    expect(screen.getByText(/New Task page will use these defaults/)).toBeInTheDocument()
+    expect(await screen.findByText("二、默认工作流配置")).toBeInTheDocument()
+    expect(screen.getByLabelText("默认 OCR Provider")).toBeInTheDocument()
+    expect(screen.getByLabelText("默认翻译 Provider")).toBeInTheDocument()
+    expect(
+      screen.getByText(/新建任务页会使用这里选择的默认 Provider/),
+    ).toBeInTheDocument()
   })
 
   it("shows the Add AI Provider button", async () => {
