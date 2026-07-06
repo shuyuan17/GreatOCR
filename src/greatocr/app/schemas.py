@@ -16,6 +16,9 @@ TaskStatus = Literal[
 ]
 RequestedTaskAction = Literal["pause", "cancel"]
 
+# 处理模式：仅 OCR，或 OCR + 翻译。
+ProcessingMode = Literal["ocr", "translation"]
+
 
 class NewTask(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -26,6 +29,18 @@ class NewTask(BaseModel):
     provider_profile_id: str = "mineru-default"
     output_dir: str | None = None
     approved_fallback_ids: list[str] = Field(default_factory=list)
+
+    # ----- AI Processing 扩展字段（OCR + 翻译 MVP）-----
+    # 处理模式。向后兼容：缺省为 "ocr"（等同于现有 OCR 流程）。
+    processing_mode: ProcessingMode = "ocr"
+    # OCR Provider（新字段）。缺省时回退到 provider_profile_id，保持兼容。
+    ocr_provider_profile_id: str | None = None
+    # 翻译 Provider（translation 模式必填）。
+    translation_provider_profile_id: str | None = None
+    # 翻译目标语言（translation 模式使用）。
+    target_language: str | None = None
+    # 翻译模式（当前仅 "page" 即逐页翻译）。
+    translation_mode: str | None = None
 
     @field_validator("pages")
     @classmethod
@@ -51,6 +66,13 @@ class TaskRecord(BaseModel):
     requested_action: RequestedTaskAction | None = None
     created_at: str
     completed_at: str | None = None
+
+    # ----- AI Processing 扩展字段 -----
+    processing_mode: ProcessingMode = "ocr"
+    ocr_provider_profile_id: str | None = None
+    translation_provider_profile_id: str | None = None
+    target_language: str | None = None
+    translation_mode: str | None = None
 
 
 class TaskResultFileEntry(BaseModel):

@@ -70,7 +70,7 @@ def test_database_initializes_explicit_schema_version(db: TaskDatabase) -> None:
             "SELECT version FROM schema_version"
         ).fetchone()
 
-    assert version == (3,)
+    assert version == (4,)
 
 
 def test_list_tasks_returns_latest_first(db: TaskDatabase) -> None:

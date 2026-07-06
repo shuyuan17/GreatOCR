@@ -107,27 +107,58 @@ class TaskService:
         confirmation: dict[str, Any] | None,
     ) -> TaskRecord:
         task = self.get(task_id)
-        provider = self.database.get_provider(task.provider_profile_id)
-        if provider is None:
+        # OCR provider（优先使用新字段，向后兼容 provider_profile_id）。
+        ocr_provider_id = task.ocr_provider_profile_id or task.provider_profile_id
+        ocr_provider = self.database.get_provider(ocr_provider_id)
+        if ocr_provider is None:
             raise TaskServiceError("PROVIDER_NOT_FOUND", status_code=404)
-        if not self.credentials.status(task.provider_profile_id).configured:
+        if not self.credentials.status(ocr_provider_id).configured:
             raise TaskServiceError("CREDENTIAL_NOT_CONFIGURED")
+
+        # OCR + 翻译模式：校验翻译 provider 与凭据。
+        translation_provider: dict[str, Any] | None = None
+        if task.processing_mode == "translation":
+            if not task.translation_provider_profile_id:
+                raise TaskServiceError("TRANSLATION_PROVIDER_REQUIRED", status_code=422)
+            translation_provider = self.database.get_provider(
+                task.translation_provider_profile_id
+            )
+            if translation_provider is None:
+                raise TaskServiceError("TRANSLATION_PROVIDER_NOT_FOUND", status_code=404)
+            if not self.credentials.status(task.translation_provider_profile_id).configured:
+                raise TaskServiceError("TRANSLATION_CREDENTIAL_NOT_CONFIGURED")
+
         preflight = self.preflight(task_id)
         if not task.selected_pages or any(
             page > preflight.page_count for page in task.selected_pages
         ):
             raise TaskServiceError("INVALID_PAGE_SELECTION", status_code=422)
 
-        if task.sensitive and provider["public"]:
-            source_name = self._source_path(task_id).name
-            expected = {
-                "confirmed": True,
-                "provider_profile_id": task.provider_profile_id,
-                "source_file_name": source_name,
-            }
-            if confirmation != expected:
-                raise TaskServiceError("SENSITIVE_CONFIRMATION_REQUIRED")
-            self._write_approval(task, expected)
+        # 敏感文件安全校验：任何被使用的公开 provider 都需用户确认。
+        if task.sensitive:
+            public_providers = [
+                provider["profile_id"]
+                for provider in (ocr_provider, translation_provider)
+                if provider is not None and provider["public"]
+            ]
+            if public_providers:
+                source_name = self._source_path(task_id).name
+                expected = {
+                    "confirmed": True,
+                    "provider_profile_id": ocr_provider_id,
+                    "source_file_name": source_name,
+                }
+                if not isinstance(confirmation, dict) or confirmation.get("confirmed") is not True:
+                    raise TaskServiceError("SENSITIVE_CONFIRMATION_REQUIRED")
+                if confirmation.get("source_file_name") != source_name:
+                    raise TaskServiceError("SENSITIVE_CONFIRMATION_REQUIRED")
+                self._write_approval(
+                    task,
+                    {
+                        **expected,
+                        "translation_provider_profile_id": task.translation_provider_profile_id,
+                    },
+                )
 
         self.database.update_task_status(task_id, "pending")
         return self.get(task_id)

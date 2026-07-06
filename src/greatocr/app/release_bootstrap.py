@@ -49,6 +49,31 @@ def ensure_release_defaults(database: TaskDatabase, *, data_dir: Path) -> None:
             }
         )
 
+    if database.get_provider("deepseek-default") is None:
+        database.save_provider(
+            {
+                "profile_id": "deepseek-default",
+                "display_name": "DeepSeek 翻译",
+                "adapter_type": "deepseek",
+                "endpoint": "https://api.deepseek.com/chat/completions",
+                "model": "deepseek-chat",
+                "public": True,
+                "capabilities": {
+                    "native_pdf": False,
+                    "scanned_pdf": False,
+                    "coordinates": False,
+                    "tables": False,
+                    "formulas": False,
+                    "languages": ["*"],
+                    "data_residency": "provider-defined",
+                    "text": False,
+                    "layout": False,
+                    "images": False,
+                },
+                "approved_fallback_ids": [],
+            }
+        )
+
     existing_prefs = database.get_preferences()
     prefs = {
         **DEFAULT_PREFERENCES,

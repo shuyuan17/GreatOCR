@@ -18,7 +18,7 @@ from greatocr.app.schemas import (
 )
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class TaskDatabase:
@@ -44,6 +44,10 @@ class TaskDatabase:
         )
         source_path = None if request.sensitive else request.source_path
         output_dir = request.output_dir or str(self.path.parent / "tasks" / task_id)
+        # OCR Provider：优先使用新字段，缺省回退到 provider_profile_id（向后兼容）。
+        ocr_provider_profile_id = (
+            request.ocr_provider_profile_id or request.provider_profile_id
+        )
         record = TaskRecord(
             task_id=task_id,
             display_name=display_name,
@@ -55,6 +59,11 @@ class TaskDatabase:
             status="pending",
             output_dir=output_dir,
             created_at=created_at,
+            processing_mode=request.processing_mode,
+            ocr_provider_profile_id=ocr_provider_profile_id,
+            translation_provider_profile_id=request.translation_provider_profile_id,
+            target_language=request.target_language,
+            translation_mode=request.translation_mode,
         )
         with self._lock, self._connection:
             self._connection.execute(
@@ -62,8 +71,10 @@ class TaskDatabase:
                 INSERT INTO tasks (
                     task_id, display_name, source_path, sensitive, selected_pages,
                     provider_profile_id, approved_fallback_ids, status, output_dir,
-                    quality_rating, requested_action, created_at, completed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    quality_rating, requested_action, created_at, completed_at,
+                    processing_mode, ocr_provider_profile_id,
+                    translation_provider_profile_id, target_language, translation_mode
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.task_id,
@@ -79,6 +90,11 @@ class TaskDatabase:
                     record.requested_action,
                     record.created_at,
                     None,  # completed_at
+                    record.processing_mode,
+                    record.ocr_provider_profile_id,
+                    record.translation_provider_profile_id,
+                    record.target_language,
+                    record.translation_mode,
                 ),
             )
         return record
@@ -299,7 +315,12 @@ class TaskDatabase:
                     quality_rating TEXT,
                     requested_action TEXT,
                     created_at TEXT NOT NULL,
-                    completed_at TEXT
+                    completed_at TEXT,
+                    processing_mode TEXT NOT NULL DEFAULT 'ocr',
+                    ocr_provider_profile_id TEXT,
+                    translation_provider_profile_id TEXT,
+                    target_language TEXT,
+                    translation_mode TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS provider_profiles (
@@ -333,6 +354,8 @@ class TaskDatabase:
                     self._migrate_v1_to_v2()
                 elif current_version == 2 and SCHEMA_VERSION == 3:
                     self._migrate_v2_to_v3()
+                elif current_version == 3 and SCHEMA_VERSION == 4:
+                    self._migrate_v3_to_v4()
                 else:
                     raise RuntimeError(
                         f"Unsupported database schema version: {current_version}"
@@ -372,6 +395,41 @@ class TaskDatabase:
                 )
                 """
             )
+            self._connection.execute(
+                "UPDATE schema_version SET version = ?",
+                (SCHEMA_VERSION,),
+            )
+
+    def _migrate_v3_to_v4(self) -> None:
+        """从 schema v3 升级到 v4：tasks 表增加 AI Processing 字段。"""
+        with self._lock, self._connection:
+            task_cols = {
+                row["name"]
+                for row in self._connection.execute(
+                    "PRAGMA table_info(tasks)"
+                ).fetchall()
+            }
+            new_task_columns = {
+                "processing_mode": "TEXT NOT NULL DEFAULT 'ocr'",
+                "ocr_provider_profile_id": "TEXT",
+                "translation_provider_profile_id": "TEXT",
+                "target_language": "TEXT",
+                "translation_mode": "TEXT",
+            }
+            for col, definition in new_task_columns.items():
+                if col not in task_cols:
+                    self._connection.execute(
+                        f"ALTER TABLE tasks ADD COLUMN {col} {definition}"
+                    )
+            # 历史 OCR 任务：ocr_provider_profile_id 回退到 provider_profile_id。
+            if "ocr_provider_profile_id" not in task_cols:
+                self._connection.execute(
+                    """
+                    UPDATE tasks
+                    SET ocr_provider_profile_id = provider_profile_id
+                    WHERE ocr_provider_profile_id IS NULL
+                    """
+                )
             self._connection.execute(
                 "UPDATE schema_version SET version = ?",
                 (SCHEMA_VERSION,),
@@ -424,6 +482,11 @@ class TaskDatabase:
             requested_action=row["requested_action"],
             created_at=row["created_at"],
             completed_at=row["completed_at"],
+            processing_mode=row["processing_mode"],
+            ocr_provider_profile_id=row["ocr_provider_profile_id"],
+            translation_provider_profile_id=row["translation_provider_profile_id"],
+            target_language=row["target_language"],
+            translation_mode=row["translation_mode"],
         )
 
     @staticmethod

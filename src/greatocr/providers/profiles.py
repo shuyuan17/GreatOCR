@@ -12,7 +12,7 @@ class ProviderProfile(BaseModel):
 
     profile_id: str
     display_name: str
-    adapter_type: Literal["mineru", "generic_vision", "fake"]
+    adapter_type: Literal["mineru", "generic_vision", "fake", "deepseek"]
     endpoint: str
     model_name: str | None = None
     public: bool = True

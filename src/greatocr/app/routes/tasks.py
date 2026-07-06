@@ -25,6 +25,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 RESULT_FILES = {
     "result_docx": "result.docx",
     "quality_report_docx": "quality-report.docx",
+    "translated_docx": "translated_result.docx",
 }
 
 
@@ -77,6 +78,9 @@ ERROR_MESSAGES: dict[str, str] = {
     "CREDENTIAL_NOT_CONFIGURED": "当前 Provider 未配置 API Key，请前往设置中完成配置",
     "INVALID_PAGE_SELECTION": "页码范围无效，请重新选择",
     "SENSITIVE_CONFIRMATION_REQUIRED": "敏感文件需要额外确认才能提交",
+    "TRANSLATION_PROVIDER_REQUIRED": "OCR + 翻译模式必须选择翻译 Provider",
+    "TRANSLATION_PROVIDER_NOT_FOUND": "翻译 Provider 未找到",
+    "TRANSLATION_CREDENTIAL_NOT_CONFIGURED": "翻译 Provider 未配置 API Key，请前往设置中完成配置",
     "INVALID_RETRY_PAGES": "指定的重试页数无效",
     "SENSITIVE_SOURCE_REATTACH_REQUIRED": "敏感文件需要重新关联源文件",
     "UPLOAD_DIR_NOT_CONFIGURED": "上传目录未配置，请联系系统管理员",
@@ -268,15 +272,25 @@ async def upload_and_create_task(
     pages: str = Form(""),
     output_dir: str = Form(""),
     approved_fallback_ids: str = Form(""),
+    processing_mode: str = Form("ocr"),
+    ocr_provider_profile_id: str = Form(""),
+    translation_provider_profile_id: str = Form(""),
+    target_language: str = Form(""),
+    translation_mode: str = Form(""),
 ) -> UploadResult:
     """接收文件上传，保存到 uploads 目录后直接创建任务。
 
     参数：
-      file:                  上传的文件（PDF 或图片）
-      sensitive:             是否敏感任务（默认 false）
-      provider_profile_id:   OCR provider ID（默认 fake-default）
-      pages:                 逗号分隔的页码，如 "1,2,3"；留空表示全部页面
-      approved_fallback_ids: 逗号分隔的 fallback provider ID 列表
+      file:                          上传的文件（PDF 或图片）
+      sensitive:                     是否敏感任务（默认 false）
+      provider_profile_id:           OCR provider ID（向后兼容默认 mineru-default）
+      pages:                         逗号分隔的页码，如 "1,2,3"；留空表示全部页面
+      approved_fallback_ids:         逗号分隔的 fallback provider ID 列表
+      processing_mode:               处理模式 "ocr" 或 "translation"
+      ocr_provider_profile_id:       OCR provider（缺省回退到 provider_profile_id）
+      translation_provider_profile_id: 翻译 provider（translation 模式必填）
+      target_language:               翻译目标语言（translation 模式使用）
+      translation_mode:              翻译模式（当前仅 "page"）
 
     返回：
       task:      已创建的任务记录（状态为 paused）
@@ -344,6 +358,15 @@ async def upload_and_create_task(
             if f:
                 parsed_fallback.append(f)
 
+    # 处理模式与翻译字段（向后兼容：缺省为 ocr，翻译字段留空不传）
+    parsed_mode = processing_mode.strip() if processing_mode else "ocr"
+    if parsed_mode not in {"ocr", "translation"}:
+        parsed_mode = "ocr"
+    parsed_ocr_provider = ocr_provider_profile_id.strip() or None
+    parsed_translation_provider = translation_provider_profile_id.strip() or None
+    parsed_target_language = target_language.strip() or None
+    parsed_translation_mode = translation_mode.strip() or None
+
     # 通过已有 TaskService 创建任务
     new_task = NewTask(
         source_path=str(save_path),
@@ -352,6 +375,11 @@ async def upload_and_create_task(
         provider_profile_id=provider_profile_id,
         output_dir=output_dir.strip() or None,
         approved_fallback_ids=parsed_fallback,
+        processing_mode=parsed_mode,
+        ocr_provider_profile_id=parsed_ocr_provider,
+        translation_provider_profile_id=parsed_translation_provider,
+        target_language=parsed_target_language,
+        translation_mode=parsed_translation_mode,
     )
     task = _run(lambda: _service(request).create(new_task))
 
