@@ -26,10 +26,11 @@ import {
 import { isPdfFile, validatePageRange } from "./pageRanges"
 import {
   AI_PROCESSING_MODES,
-  CURRENT_AI_ENGINE,
-  CURRENT_OCR_PROVIDER,
+  AI_PROVIDER_CATALOG,
   DEFAULT_AI_MODE,
+  DEFAULT_OCR_PROVIDER,
   DEFAULT_SENSITIVE,
+  DEFAULT_TRANSLATION_PROVIDER,
   DEFAULT_TARGET_LANGUAGE,
   DEFAULT_TRANSLATION_MODE,
   SENSITIVE_OPTIONS,
@@ -542,22 +543,17 @@ function NewTaskPage() {
 
       <div style={{ marginBottom: 16 }}>
         <div style={{ marginBottom: 6, fontWeight: 500, color: "#555" }}>
-          当前 OCR Provider
+          Current Workflow
+        </div>
+        <div style={{ fontSize: "0.95rem", color: "#333", marginBottom: 4 }}>
+          OCR Provider: {DEFAULT_OCR_PROVIDER}
         </div>
         <div style={{ fontSize: "0.95rem", color: "#333" }}>
-          当前 OCR Provider：{CURRENT_OCR_PROVIDER}
+          Translation Provider:{" "}
+          {aiMode === "translation" ? DEFAULT_TRANSLATION_PROVIDER : "Not used"}
         </div>
         <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#666" }}>
-          如需修改，请前往<Link to="/settings">设置</Link>。
-        </div>
-      </div>
-
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ marginBottom: 6, fontWeight: 500, color: "#555" }}>
-          当前 AI Engine
-        </div>
-        <div style={{ fontSize: "0.95rem", color: "#333" }}>
-          当前 AI Engine：{CURRENT_AI_ENGINE}
+          Providers are configured in <Link to="/settings">Settings</Link>.
         </div>
       </div>
 
@@ -1278,6 +1274,7 @@ function SettingsPage() {
   const [saveMsgType, setSaveMsgType] = useState<"success" | "error">("success")
   const [connectionTesting, setConnectionTesting] = useState<string | null>(null)
   const [connectionResult, setConnectionResult] = useState<Record<string, string>>({})
+  const [addProviderNotice, setAddProviderNotice] = useState("")
 
   // Provider form state (per provider)
   const [providerForms, setProviderForms] = useState<
@@ -1287,16 +1284,20 @@ function SettingsPage() {
   useEffect(() => {
     Promise.all([listProviders(), getPreferences()])
       .then(([providerList, prefs]) => {
-        setProviders(providerList)
+        // fake-default 仅用于离线测试，正式 UI 不展示。
+        const visible = providerList.filter((p) => p.profile_id !== "fake-default")
+        setProviders(visible)
         setPreferences(prefs)
-        // Initialize provider forms
+        // 依据 AI Provider 目录初始化可配置 Provider 的表单（排除 coming soon）。
         const forms: Record<string, { apiKey: string; showKey: boolean; endpoint: string; model: string }> = {}
-        providerList.forEach((p) => {
-          forms[p.profile_id] = {
+        AI_PROVIDER_CATALOG.forEach((entry) => {
+          if (entry.comingSoon) return
+          const real = visible.find((p) => p.profile_id === entry.profileId)
+          forms[entry.profileId] = {
             apiKey: "",
             showKey: false,
-            endpoint: p.endpoint || "",
-            model: p.model || "",
+            endpoint: real?.endpoint || "",
+            model: real?.model || "",
           }
         })
         setProviderForms(forms)
@@ -1363,6 +1364,11 @@ function SettingsPage() {
     } finally {
       setConnectionTesting(null)
     }
+  }
+
+  const handleAddProvider = () => {
+    // 本版本仅提示，不实现真实新增。
+    setAddProviderNotice("AI Provider management will be available in V2.4.")
   }
 
   const sectionStyle: CSSProperties = {
@@ -1436,6 +1442,24 @@ function SettingsPage() {
     marginBottom: 14,
   }
 
+  const capabilityTagStyle: CSSProperties = {
+    display: "inline-block",
+    marginLeft: 4,
+    marginRight: 4,
+    padding: "2px 8px",
+    fontSize: "0.75rem",
+    borderRadius: 10,
+    background: "#eef2f7",
+    color: "#37474f",
+    border: "1px solid #d6dde6",
+  }
+
+  // 依据前端目录渲染 Provider 卡片；real 为后端真实数据（用于配置状态）。
+  const displayProviders = AI_PROVIDER_CATALOG.map((entry) => ({
+    ...entry,
+    real: providers.find((p) => p.profile_id === entry.profileId),
+  }))
+
   return (
     <div style={{ padding: "2rem", maxWidth: 800, margin: "0 auto" }}>
       <h2 style={{ marginTop: 0, color: "#333" }}>设置</h2>
@@ -1461,16 +1485,87 @@ function SettingsPage() {
 
       {!loading && (
         <>
-          {/* ============ 一、OCR Provider ============ */}
+          {/* ============ 一、AI Provider Library ============ */}
           <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>一、OCR Provider</h3>
-            {providers.map((provider) => {
-              const form = providerForms[provider.profile_id]
-              const isTesting = connectionTesting === provider.profile_id
-              const connResult = connectionResult[provider.profile_id]
+            <h3 style={sectionTitleStyle}>一、AI Provider Library</h3>
+
+            {displayProviders.map((entry) => {
+              const real = entry.real
+              const form = providerForms[entry.profileId]
+              const isTesting = connectionTesting === entry.profileId
+              const connResult = connectionResult[entry.profileId]
+              const configured = !!real?.credential.configured
+
+              if (entry.comingSoon) {
+                return (
+                  <div
+                    key={entry.profileId}
+                    style={{
+                      padding: 16,
+                      marginBottom: 12,
+                      border: "1px solid #e0e0e0",
+                      borderRadius: 8,
+                      background: "#f5f5f5",
+                      opacity: 0.75,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 8,
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, color: "#333", fontSize: "1rem" }}>
+                        {entry.displayName}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "0.75rem",
+                          padding: "2px 10px",
+                          borderRadius: 12,
+                          background: "#eeeeee",
+                          color: "#888",
+                          border: "1px solid #dddddd",
+                        }}
+                      >
+                        Coming Soon
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "#888", marginBottom: 8 }}>
+                      Type: AI Provider
+                    </div>
+                    <div style={{ marginBottom: 6 }}>
+                      <span style={{ fontSize: "0.8rem", color: "#555", fontWeight: 500 }}>
+                        Capabilities:
+                      </span>
+                      {entry.capabilities.map((cap) => (
+                        <span key={cap} style={capabilityTagStyle}>
+                          {cap}
+                        </span>
+                      ))}
+                    </div>
+                    <div>
+                      <span style={{ fontSize: "0.8rem", color: "#555", fontWeight: 500 }}>
+                        Sensitive File:
+                      </span>{" "}
+                      <span
+                        style={{
+                          fontSize: "0.8rem",
+                          color: entry.sensitiveAllowed ? "#2e7d32" : "#888",
+                        }}
+                      >
+                        {entry.sensitiveAllowed ? "Allowed" : "Not Allowed"}
+                      </span>
+                    </div>
+                  </div>
+                )
+              }
+
               return (
                 <div
-                  key={provider.profile_id}
+                  key={entry.profileId}
                   style={{
                     padding: 16,
                     marginBottom: 12,
@@ -1484,24 +1579,52 @@ function SettingsPage() {
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
-                      marginBottom: 12,
+                      marginBottom: 10,
                     }}
                   >
                     <span style={{ fontWeight: 600, color: "#333", fontSize: "1rem" }}>
-                      {provider.display_name}
+                      {entry.displayName}
                     </span>
                     <span
                       style={{
                         fontSize: "0.8rem",
                         padding: "2px 10px",
                         borderRadius: 12,
-                        background: provider.credential.configured ? "#e6f7e6" : "#fde8e8",
-                        color: provider.credential.configured ? "#2e7d32" : "#c62828",
+                        background: configured ? "#e6f7e6" : "#fde8e8",
+                        color: configured ? "#2e7d32" : "#c62828",
                       }}
                     >
-                      {provider.credential.configured
-                        ? `已配置 ${provider.credential.masked}`
+                      {configured
+                        ? `已配置 ${real?.credential.masked ?? ""}`
                         : "未配置 API Key"}
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: "0.8rem", color: "#888", marginBottom: 8 }}>
+                    Type: AI Provider
+                  </div>
+
+                  <div style={{ marginBottom: 6 }}>
+                    <span style={{ fontSize: "0.8rem", color: "#555", fontWeight: 500 }}>
+                      Capabilities:
+                    </span>
+                    {entry.capabilities.map((cap) => (
+                      <span key={cap} style={capabilityTagStyle}>
+                        {cap}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <span style={{ fontSize: "0.8rem", color: "#555", fontWeight: 500 }}>
+                      Sensitive File:
+                    </span>{" "}
+                    <span
+                      style={{
+                        fontSize: "0.8rem",
+                        color: entry.sensitiveAllowed ? "#2e7d32" : "#c62828",
+                      }}
+                    >
+                      {entry.sensitiveAllowed ? "Allowed" : "Not Allowed"}
                     </span>
                   </div>
 
@@ -1515,26 +1638,22 @@ function SettingsPage() {
                         onChange={(e) =>
                           setProviderForms((prev) => ({
                             ...prev,
-                            [provider.profile_id]: {
-                              ...prev[provider.profile_id],
+                            [entry.profileId]: {
+                              ...prev[entry.profileId],
                               apiKey: e.target.value,
                             },
                           }))
                         }
-                        placeholder={
-                          provider.credential.configured
-                            ? "输入新 API Key 以替换现有密钥"
-                            : "输入 API Key"
-                        }
+                        placeholder={configured ? "输入新 API Key 以替换现有密钥" : "输入 API Key"}
                         style={{ ...inputStyle, flex: 1 }}
                       />
                       <button
                         onClick={() =>
                           setProviderForms((prev) => ({
                             ...prev,
-                            [provider.profile_id]: {
-                              ...prev[provider.profile_id],
-                              showKey: !prev[provider.profile_id]?.showKey,
+                            [entry.profileId]: {
+                              ...prev[entry.profileId],
+                              showKey: !prev[entry.profileId]?.showKey,
                             },
                           }))
                         }
@@ -1564,64 +1683,39 @@ function SettingsPage() {
                       onChange={(e) =>
                         setProviderForms((prev) => ({
                           ...prev,
-                          [provider.profile_id]: {
-                            ...prev[provider.profile_id],
+                          [entry.profileId]: {
+                            ...prev[entry.profileId],
                             endpoint: e.target.value,
                           },
                         }))
                       }
-                      placeholder={provider.endpoint || "输入 API 端点地址"}
+                      placeholder={real?.endpoint || "输入 API 端点地址"}
                       style={inputStyle}
                     />
                   </div>
 
-                  {/* Model */}
-                  {provider.profile_id !== "fake-default" && (
-                    <div style={formGroupStyle}>
-                      <label style={labelStyle}>Model</label>
-                      <input
-                        type="text"
-                        value={form?.model || ""}
-                        onChange={(e) =>
-                          setProviderForms((prev) => ({
-                            ...prev,
-                            [provider.profile_id]: {
-                              ...prev[provider.profile_id],
-                              model: e.target.value,
-                            },
-                          }))
-                        }
-                        placeholder={provider.model || "输入模型名称（可选）"}
-                        style={inputStyle}
-                      />
-                    </div>
-                  )}
-
                   {/* Actions */}
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
                     <button
-                      onClick={() => handleSaveProviderSettings(provider.profile_id)}
-                      disabled={!!saving[`provider-${provider.profile_id}`]}
+                      onClick={() => handleSaveProviderSettings(entry.profileId)}
+                      disabled={!!saving[`provider-${entry.profileId}`]}
                       style={{
                         ...btnPrimaryStyle,
-                        opacity: saving[`provider-${provider.profile_id}`] ? 0.7 : 1,
+                        opacity: saving[`provider-${entry.profileId}`] ? 0.7 : 1,
                       }}
                     >
-                      {saving[`provider-${provider.profile_id}`] ? "保存中..." : "保存"}
+                      {saving[`provider-${entry.profileId}`] ? "保存中..." : "Save"}
                     </button>
                     <button
-                      onClick={() => handleTestConnection(provider.profile_id)}
-                      disabled={isTesting || !provider.credential.configured}
+                      onClick={() => handleTestConnection(entry.profileId)}
+                      disabled={isTesting || !configured}
                       style={{
                         ...btnSecondaryStyle,
-                        opacity: isTesting || !provider.credential.configured ? 0.6 : 1,
-                        cursor:
-                          isTesting || !provider.credential.configured
-                            ? "not-allowed"
-                            : "pointer",
+                        opacity: isTesting || !configured ? 0.6 : 1,
+                        cursor: isTesting || !configured ? "not-allowed" : "pointer",
                       }}
                     >
-                      {isTesting ? "测试中..." : "测试连接"}
+                      {isTesting ? "测试中..." : "Test Connection"}
                     </button>
                     {connResult && (
                       <span
@@ -1630,29 +1724,89 @@ function SettingsPage() {
                           color: connResult === "success" ? "#2e7d32" : "#c62828",
                         }}
                       >
-                        {connResult === "success"
-                          ? "✅ 连接成功"
-                          : `❌ ${connResult}`}
+                        {connResult === "success" ? "✅ 连接成功" : `❌ ${connResult}`}
                       </span>
                     )}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: "0.8rem",
-                      color: "#999",
-                    }}
-                  >
-                    ID: {provider.profile_id} · 类型: {provider.adapter_type}
+                    <button
+                      disabled
+                      title="Default providers cannot be deleted in this version."
+                      style={{
+                        marginLeft: "auto",
+                        padding: "6px 16px",
+                        fontSize: "0.85rem",
+                        color: "#9e9e9e",
+                        background: "#f5f5f5",
+                        border: "1px solid #e0e0e0",
+                        borderRadius: 6,
+                        cursor: "not-allowed",
+                      }}
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
               )
             })}
+
+            {/* Add AI Provider（本版本仅提示，不实现真实新增） */}
+            <div style={{ marginTop: 4 }}>
+              <button
+                onClick={handleAddProvider}
+                style={{
+                  padding: "8px 20px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  color: "#1565c0",
+                  background: "#e3f2fd",
+                  border: "1px solid #90caf9",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                }}
+              >
+                + Add AI Provider
+              </button>
+              {addProviderNotice && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: "10px 14px",
+                    borderRadius: 6,
+                    background: "#fff3cd",
+                    border: "1px solid #ffe082",
+                    fontSize: "0.9rem",
+                    color: "#856404",
+                  }}
+                >
+                  {addProviderNotice}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* ============ 二、OCR 参数 ============ */}
+          {/* ============ 二、Default Workflow Configuration ============ */}
           <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>二、OCR 参数</h3>
+            <h3 style={sectionTitleStyle}>二、Default Workflow Configuration</h3>
+
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Default OCR Provider</label>
+              <div style={{ fontSize: "0.95rem", color: "#333" }}>{DEFAULT_OCR_PROVIDER}</div>
+            </div>
+
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Default Translation Provider</label>
+              <div style={{ fontSize: "0.95rem", color: "#333" }}>{DEFAULT_TRANSLATION_PROVIDER}</div>
+            </div>
+
+            <div style={{ fontSize: "0.8rem", color: "#666", lineHeight: 1.6 }}>
+              New Task page will use these defaults.
+              <br />
+              若开启敏感文件，仅允许选择 Sensitive File Allowed 的 Provider。
+            </div>
+          </div>
+
+          {/* ============ 三、OCR 参数 ============ */}
+          <div style={sectionStyle}>
+            <h3 style={sectionTitleStyle}>三、OCR 参数</h3>
 
             <div style={formGroupStyle}>
               <label style={labelStyle} htmlFor="ocr-language">
@@ -1693,9 +1847,9 @@ function SettingsPage() {
             </div>
           </div>
 
-          {/* ============ 三、PDF 默认设置 ============ */}
+          {/* ============ 四、PDF 默认设置 ============ */}
           <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>三、PDF 默认设置</h3>
+            <h3 style={sectionTitleStyle}>四、PDF 默认设置</h3>
 
             <div style={checkboxRowStyle}>
               <input
@@ -1734,9 +1888,9 @@ function SettingsPage() {
             </div>
           </div>
 
-          {/* ============ 四、输出设置 ============ */}
+          {/* ============ 五、输出设置 ============ */}
           <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>四、输出设置</h3>
+            <h3 style={sectionTitleStyle}>五、输出设置</h3>
 
             <div style={formGroupStyle}>
               <label style={labelStyle} htmlFor="default-output-dir">
@@ -1777,9 +1931,9 @@ function SettingsPage() {
             )}
           </div>
 
-          {/* ============ 五、结果设置 ============ */}
+          {/* ============ 六、结果设置 ============ */}
           <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>五、结果设置</h3>
+            <h3 style={sectionTitleStyle}>六、结果设置</h3>
 
             <div style={checkboxRowStyle}>
               <input
@@ -1816,9 +1970,9 @@ function SettingsPage() {
             </div>
           </div>
 
-          {/* ============ 六、配置管理 ============ */}
+          {/* ============ 七、配置管理 ============ */}
           <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>六、配置管理</h3>
+            <h3 style={sectionTitleStyle}>七、配置管理</h3>
             <div style={{ fontSize: "0.9rem", color: "#555", lineHeight: 1.8 }}>
               <p style={{ margin: 0 }}>
                 ✅ 所有配置已持久化保存到本地 SQLite 数据库。

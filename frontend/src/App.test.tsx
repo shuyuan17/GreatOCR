@@ -69,11 +69,28 @@ const providerList = [
     approved_fallback_ids: [],
     credential: { configured: true, masked: "********1234" },
   },
+  {
+    // 仅用于离线测试，UI 不应展示（fake-default）。
+    profile_id: "fake-default",
+    display_name: "Fake Provider",
+    adapter_type: "fake",
+    endpoint: null,
+    model: null,
+    public: false,
+    capabilities: {},
+    approved_fallback_ids: [],
+    credential: { configured: false, masked: null },
+  },
 ]
 
 const apiModule = vi.hoisted(() => ({
   apiFetch: vi.fn(() => Promise.resolve(new Response(JSON.stringify({ status: "ok" })))),
   listProviders: vi.fn(() => Promise.resolve(providerList)),
+  getPreferences: vi.fn(() => Promise.resolve({})),
+  updatePreferences: vi.fn((prefs: Record<string, string>) => Promise.resolve(prefs)),
+  updateProviderProfile: vi.fn((id: string) => Promise.resolve({ profile_id: id })),
+  updateProviderCredential: vi.fn((id: string) => Promise.resolve({ profile_id: id })),
+  testProviderConnection: vi.fn(() => Promise.resolve()),
   uploadFile: vi.fn(),
   startTask: vi.fn(),
   getTask: vi.fn(),
@@ -335,13 +352,22 @@ describe("New Task page - AI Processing UI", () => {
     ).toBeInTheDocument()
   })
 
-  it("shows current OCR Provider and AI Engine as read-only display", async () => {
+  it("shows Current Workflow with OCR provider and Not used for translation in OCR Only mode", async () => {
     renderNewTask()
-    // OCR Provider 不再作为主要选择项
-    expect(screen.queryByLabelText("OCR Provider")).toBeNull()
-    expect(await screen.findByText("当前 OCR Provider：MinerU")).toBeInTheDocument()
-    expect(screen.getByText(/如需修改，请前往/)).toBeInTheDocument()
-    expect(await screen.findByText("当前 AI Engine：DeepSeek")).toBeInTheDocument()
+    expect(await screen.findByText("Current Workflow")).toBeInTheDocument()
+    expect(screen.getByText(/OCR Provider: MinerU/)).toBeInTheDocument()
+    // OCR Only 默认：Translation Provider = Not used
+    expect(screen.getByText(/Not used/)).toBeInTheDocument()
+    expect(screen.getByText(/Providers are configured in/)).toBeInTheDocument()
+  })
+
+  it("shows DeepSeek as Translation Provider when Translation mode is selected", async () => {
+    renderNewTask()
+    const mode = screen.getByLabelText("AI Processing Mode") as HTMLSelectElement
+    fireEvent.change(mode, { target: { value: "translation" } })
+    expect(await screen.findByText(/Translation Provider: DeepSeek/)).toBeInTheDocument()
+    // 切换到 Translation 后，不应再显示 Not used
+    expect(screen.queryByText(/Not used/)).not.toBeInTheDocument()
   })
 
   it("changes the submit button label with the AI mode", async () => {
@@ -357,5 +383,95 @@ describe("New Task page - AI Processing UI", () => {
       screen.getByRole("button", { name: "开始 OCR + 翻译" }),
     ).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "开始 OCR" })).toBeNull()
+  })
+})
+
+describe("Settings page - AI Provider Library & Default Workflow", () => {
+  beforeEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+    apiModule.listProviders.mockResolvedValue(providerList)
+    apiModule.listTasks.mockResolvedValue([])
+    apiModule.getPreferences.mockResolvedValue({})
+    apiModule.getDefaultOutputDir.mockResolvedValue({
+      output_dir: "D:/repo/data/exports",
+    })
+  })
+
+  function renderSettings() {
+    return render(
+      <MemoryRouter initialEntries={["/settings"]}>
+        <App />
+      </MemoryRouter>,
+    )
+  }
+
+  it("shows the AI Provider Library section", async () => {
+    renderSettings()
+    expect(await screen.findByText(/AI Provider Library/)).toBeInTheDocument()
+  })
+
+  it("shows the MinerU provider", async () => {
+    renderSettings()
+    expect((await screen.findAllByText("MinerU")).length).toBeGreaterThan(0)
+  })
+
+  it("shows the DeepSeek provider", async () => {
+    renderSettings()
+    expect((await screen.findAllByText("DeepSeek")).length).toBeGreaterThan(0)
+  })
+
+  it("does not show the Fake Provider", async () => {
+    renderSettings()
+    // fake-default 应被过滤，正式 UI 不展示。
+    expect(await screen.findByText(/AI Provider Library/)).toBeInTheDocument()
+    expect(screen.queryByText("Fake Provider")).not.toBeInTheDocument()
+  })
+
+  it("shows the Capabilities label", async () => {
+    renderSettings()
+    expect((await screen.findAllByText("Capabilities:")).length).toBeGreaterThan(0)
+    // 能力标签至少包含 OCR / Translation
+    expect(screen.getAllByText("OCR").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Translation").length).toBeGreaterThan(0)
+  })
+
+  it("shows Sensitive File Not Allowed", async () => {
+    renderSettings()
+    expect((await screen.findAllByText("Sensitive File:")).length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Not Allowed").length).toBeGreaterThan(0)
+  })
+
+  it("shows the Default Workflow Configuration section", async () => {
+    renderSettings()
+    expect(await screen.findByText(/Default Workflow Configuration/)).toBeInTheDocument()
+    expect(screen.getByText("Default OCR Provider")).toBeInTheDocument()
+    expect(screen.getByText("Default Translation Provider")).toBeInTheDocument()
+    expect(screen.getByText(/New Task page will use these defaults/)).toBeInTheDocument()
+  })
+
+  it("shows the Add AI Provider button", async () => {
+    renderSettings()
+    expect(
+      await screen.findByRole("button", { name: "+ Add AI Provider" }),
+    ).toBeInTheDocument()
+  })
+
+  it("shows the V2.4 notice when Add AI Provider is clicked", async () => {
+    renderSettings()
+    const addButton = await screen.findByRole("button", { name: "+ Add AI Provider" })
+    fireEvent.click(addButton)
+    expect(
+      await screen.findByText("AI Provider management will be available in V2.4."),
+    ).toBeInTheDocument()
+  })
+
+  it("shows coming soon providers as disabled cards", async () => {
+    renderSettings()
+    expect(await screen.findByText("OpenAI")).toBeInTheDocument()
+    expect(screen.getByText("Azure Document Intelligence")).toBeInTheDocument()
+    expect(screen.getByText("Local Model")).toBeInTheDocument()
+    // Local Model 允许敏感文件
+    expect(screen.getAllByText("Allowed").length).toBeGreaterThan(0)
   })
 })
