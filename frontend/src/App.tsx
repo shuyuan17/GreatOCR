@@ -24,6 +24,22 @@ import {
   type TaskStatus,
 } from "./api"
 import { isPdfFile, validatePageRange } from "./pageRanges"
+import {
+  AI_PROCESSING_MODES,
+  CURRENT_AI_ENGINE,
+  CURRENT_OCR_PROVIDER,
+  DEFAULT_AI_MODE,
+  DEFAULT_SENSITIVE,
+  DEFAULT_TARGET_LANGUAGE,
+  DEFAULT_TRANSLATION_MODE,
+  SENSITIVE_OPTIONS,
+  TARGET_LANGUAGES,
+  TRANSLATION_MODES,
+  type AiModeValue,
+  type SensitiveValue,
+  type TargetLanguage,
+  type TranslationMode,
+} from "./aiProcessing"
 
 type HealthState = "loading" | "ok" | "error"
 
@@ -207,6 +223,14 @@ function NewTaskPage() {
   const [providers, setProviders] = useState<ProviderView[]>([])
   const [selectedProvider, setSelectedProvider] = useState("")
   const [pageRange, setPageRange] = useState("")
+  const [sensitive, setSensitive] = useState<SensitiveValue>(DEFAULT_SENSITIVE)
+  const [aiMode, setAiMode] = useState<AiModeValue>(DEFAULT_AI_MODE)
+  const [targetLanguage, setTargetLanguage] = useState<TargetLanguage>(
+    DEFAULT_TARGET_LANGUAGE,
+  )
+  const [translationMode, setTranslationMode] = useState<TranslationMode>(
+    DEFAULT_TRANSLATION_MODE,
+  )
   const [outputDir, setOutputDir] = useState("")
   const [phase, setPhase] = useState<
     "idle" | "uploading" | "starting" | "running" | "done" | "error"
@@ -303,6 +327,10 @@ function NewTaskPage() {
     (provider) => provider.profile_id === selectedProvider,
   )?.credential?.configured
 
+  const currentMode =
+    AI_PROCESSING_MODES.find((mode) => mode.value === aiMode) ??
+    AI_PROCESSING_MODES[0]
+
   const statusStyle: CSSProperties = {
     marginTop: 16,
     padding: "12px 16px",
@@ -313,7 +341,10 @@ function NewTaskPage() {
 
   return (
     <div style={{ padding: "2rem", maxWidth: 640, margin: "0 auto" }}>
-      <h2 style={{ marginTop: 0, color: "#333" }}>新建 OCR 任务</h2>
+      <h2 style={{ marginTop: 0, color: "#333" }}>AI Processing</h2>
+      <div style={{ marginBottom: 16, fontSize: "0.9rem", color: "#666" }}>
+        OCR + AI 后处理工作流
+      </div>
 
       <div style={{ marginBottom: 16 }}>
         <label
@@ -387,31 +418,147 @@ function NewTaskPage() {
 
       <div style={{ marginBottom: 16 }}>
         <label
-          htmlFor="provider-select"
+          htmlFor="sensitive-select"
           style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
         >
-          OCR Provider
+          是否敏感文件？
         </label>
         <select
-          id="provider-select"
-          aria-label="OCR Provider"
-          value={selectedProvider}
+          id="sensitive-select"
+          aria-label="是否敏感文件"
+          value={sensitive}
           disabled={phase !== "idle"}
-          onChange={(event) => setSelectedProvider(event.target.value)}
+          onChange={(event) => setSensitive(event.target.value as SensitiveValue)}
           style={{ fontSize: "0.95rem", padding: "4px 8px" }}
         >
-          {providers.map((provider) => (
-            <option key={provider.profile_id} value={provider.profile_id}>
-              {provider.display_name}{" "}
-              {provider.credential?.configured ? "已配置" : "未配置"}
+          {SENSITIVE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
             </option>
           ))}
         </select>
-        {selectedProvider && !providerReady && (
-          <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#c62828" }}>
-            当前 Provider 未配置 API Key，请先在设置中完成配置。
+        <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#666" }}>
+          敏感文件会限制可用 Provider，避免发送到不合适的外部服务。
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <label
+          htmlFor="ai-mode-select"
+          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
+        >
+          AI Processing Mode
+        </label>
+        <select
+          id="ai-mode-select"
+          aria-label="AI Processing Mode"
+          value={aiMode}
+          disabled={phase !== "idle"}
+          onChange={(event) => setAiMode(event.target.value as AiModeValue)}
+          style={{ fontSize: "0.95rem", padding: "4px 8px" }}
+        >
+          {AI_PROCESSING_MODES.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#666" }}>
+          {currentMode.description}
+        </div>
+        {aiMode === "translation" && (
+          <div
+            style={{
+              marginTop: 12,
+              paddingLeft: 12,
+              borderLeft: "3px solid #e0e0e0",
+            }}
+          >
+            <div style={{ marginBottom: 16 }}>
+              <label
+                htmlFor="target-language-select"
+                style={{
+                  display: "block",
+                  marginBottom: 6,
+                  fontWeight: 500,
+                  color: "#555",
+                }}
+              >
+                Target Language
+              </label>
+              <select
+                id="target-language-select"
+                aria-label="Target Language"
+                value={targetLanguage}
+                disabled={phase !== "idle"}
+                onChange={(event) =>
+                  setTargetLanguage(event.target.value as TargetLanguage)
+                }
+                style={{ fontSize: "0.95rem", padding: "4px 8px" }}
+              >
+                {TARGET_LANGUAGES.map((language) => (
+                  <option key={language} value={language}>
+                    {language}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label
+                htmlFor="translation-mode-select"
+                style={{
+                  display: "block",
+                  marginBottom: 6,
+                  fontWeight: 500,
+                  color: "#555",
+                }}
+              >
+                Translation Mode
+              </label>
+              <select
+                id="translation-mode-select"
+                aria-label="Translation Mode"
+                value={translationMode}
+                disabled={phase !== "idle"}
+                onChange={(event) =>
+                  setTranslationMode(event.target.value as TranslationMode)
+                }
+                style={{ fontSize: "0.95rem", padding: "4px 8px" }}
+              >
+                {TRANSLATION_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#666" }}>
+              Page by Page 会使用 OCR 时选择的页码范围，不需要用户重新输入页码。如果 OCR
+              页码范围为空，则翻译全部 OCR 结果。
+            </div>
           </div>
         )}
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 6, fontWeight: 500, color: "#555" }}>
+          当前 OCR Provider
+        </div>
+        <div style={{ fontSize: "0.95rem", color: "#333" }}>
+          当前 OCR Provider：{CURRENT_OCR_PROVIDER}
+        </div>
+        <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#666" }}>
+          如需修改，请前往<Link to="/settings">设置</Link>。
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 6, fontWeight: 500, color: "#555" }}>
+          当前 AI Engine
+        </div>
+        <div style={{ fontSize: "0.95rem", color: "#333" }}>
+          当前 AI Engine：{CURRENT_AI_ENGINE}
+        </div>
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -453,7 +600,9 @@ function NewTaskPage() {
         }}
       >
         {phase === "idle"
-          ? "开始 OCR"
+          ? aiMode === "translation"
+            ? "开始 OCR + 翻译"
+            : "开始 OCR"
           : phase === "uploading"
             ? "上传中..."
             : phase === "starting"

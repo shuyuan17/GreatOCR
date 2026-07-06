@@ -255,3 +255,107 @@ describe("GreatOCR application shell", () => {
     expect(taskNames[1]).toHaveTextContent("older.pdf")
   })
 })
+
+describe("New Task page - AI Processing UI", () => {
+  beforeEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+    apiModule.listProviders.mockResolvedValue(providerList)
+    apiModule.listTasks.mockResolvedValue([])
+    apiModule.getDefaultOutputDir.mockResolvedValue({
+      output_dir: "D:/repo/data/exports",
+    })
+  })
+
+  function renderNewTask() {
+    return render(
+      <MemoryRouter initialEntries={["/new"]}>
+        <App />
+      </MemoryRouter>,
+    )
+  }
+
+  it("shows the AI Processing title and subtitle", () => {
+    renderNewTask()
+    expect(screen.getByText("AI Processing")).toBeInTheDocument()
+    expect(screen.getByText("OCR + AI 后处理工作流")).toBeInTheDocument()
+  })
+
+  it("shows the sensitive file option defaulting to 否", () => {
+    renderNewTask()
+    const sensitive = screen.getByLabelText("是否敏感文件？") as HTMLSelectElement
+    expect(sensitive).toBeInTheDocument()
+    // 默认：否
+    expect(sensitive.value).toBe("no")
+    expect(
+      screen.getByText(
+        "敏感文件会限制可用 Provider，避免发送到不合适的外部服务。",
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it("shows AI Processing Mode defaulting to OCR Only", () => {
+    renderNewTask()
+    const mode = screen.getByLabelText("AI Processing Mode") as HTMLSelectElement
+    expect(mode).toBeInTheDocument()
+    // 默认：OCR Only
+    expect(mode.value).toBe("ocr")
+    expect(screen.getByText("OCR Only")).toBeInTheDocument()
+    // OCR Only 说明文案
+    expect(screen.getByText("仅执行 OCR，生成 result.docx")).toBeInTheDocument()
+  })
+
+  it("switches to Translation and reveals translation config", async () => {
+    renderNewTask()
+    const mode = screen.getByLabelText("AI Processing Mode") as HTMLSelectElement
+    fireEvent.change(mode, { target: { value: "translation" } })
+    expect(mode.value).toBe("translation")
+
+    // Translation 配置仅在切换后出现
+    const targetLanguage = (await screen.findByLabelText(
+      "Target Language",
+    )) as HTMLSelectElement
+    expect(targetLanguage.value).toBe("Chinese")
+    expect(screen.getByText("Chinese")).toBeInTheDocument()
+
+    const translationMode = screen.getByLabelText(
+      "Translation Mode",
+    ) as HTMLSelectElement
+    expect(translationMode.value).toBe("Page by Page")
+    expect(screen.getByText("Page by Page")).toBeInTheDocument()
+
+    // Page by Page 使用 OCR 页码范围的提示
+    expect(
+      screen.getByText(/Page by Page 会使用 OCR 时选择的页码范围/),
+    ).toBeInTheDocument()
+
+    // Translation 说明文案
+    expect(
+      screen.getByText("OCR 完成后执行 AI 翻译，生成 translated_result.docx"),
+    ).toBeInTheDocument()
+  })
+
+  it("shows current OCR Provider and AI Engine as read-only display", async () => {
+    renderNewTask()
+    // OCR Provider 不再作为主要选择项
+    expect(screen.queryByLabelText("OCR Provider")).toBeNull()
+    expect(await screen.findByText("当前 OCR Provider：MinerU")).toBeInTheDocument()
+    expect(screen.getByText(/如需修改，请前往/)).toBeInTheDocument()
+    expect(await screen.findByText("当前 AI Engine：DeepSeek")).toBeInTheDocument()
+  })
+
+  it("changes the submit button label with the AI mode", async () => {
+    renderNewTask()
+    expect(
+      screen.getByRole("button", { name: "开始 OCR" }),
+    ).toBeInTheDocument()
+
+    const mode = screen.getByLabelText("AI Processing Mode") as HTMLSelectElement
+    fireEvent.change(mode, { target: { value: "translation" } })
+
+    expect(
+      screen.getByRole("button", { name: "开始 OCR + 翻译" }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "开始 OCR" })).toBeNull()
+  })
+})

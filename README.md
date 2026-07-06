@@ -55,6 +55,28 @@ GreatOCR 是一个面向 Windows 的本地 OCR 工作流工具，包含 FastAPI 
 - 重新安装 `node_modules`
 - 询问开发工具确认
 
+## 开发者 Demo 启动方式（demo.py）
+
+`scripts/demo.py` 是一个开发 / 演示用的便捷启动器，适合在每次任务完成后快速手动验证 GreatOCR。它与 `install.bat` / `start.bat` 互补，且不替代它们（不承担安装依赖的职责）。
+
+```bash
+python scripts/demo.py
+```
+
+它会自动完成：
+
+1. 检查 `.venv` 是否存在
+2. 检查 Node.js 是否可用
+3. 生成本次运行的 session token
+4. 启动后端：`.venv/Scripts/python.exe scripts/serve.py`
+5. 启动前端：`frontend/node_modules/vite/bin/vite.js`
+6. 将同一个 token 同时传给 `GREATOCR_SESSION_TOKEN` 与 `VITE_GREAT_OCR_TOKEN`
+7. 自动打开浏览器 `http://localhost:5173`
+8. 在终端显示后端地址、前端地址与关闭方式
+9. 按 `Ctrl+C` 时尽量关闭前后端子进程
+
+> 前提：已通过 `install.bat` 完成首次安装（`.venv` 与 `frontend/node_modules` 均存在）。
+
 ## Provider 与 API Key
 
 - Release 默认不显示 `Fake Provider`
