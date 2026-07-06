@@ -106,6 +106,7 @@ vi.mock("./api", () => apiModule)
 describe("GreatOCR application shell", () => {
   beforeEach(() => {
     cleanup()
+    localStorage.clear()
     vi.clearAllMocks()
     apiModule.listProviders.mockResolvedValue(providerList)
     apiModule.listTasks.mockResolvedValue([])
@@ -134,9 +135,7 @@ describe("GreatOCR application shell", () => {
       </MemoryRouter>,
     )
 
-    await waitFor(() => {
-      expect(apiModule.listProviders).toHaveBeenCalled()
-    })
+    await screen.findByLabelText("选择文件")
 
     fireEvent.change(screen.getByLabelText("选择文件"), {
       target: {
@@ -276,6 +275,7 @@ describe("GreatOCR application shell", () => {
 describe("Settings page - AI Provider 库 & 默认工作流配置", () => {
   beforeEach(() => {
     cleanup()
+    localStorage.clear()
     vi.clearAllMocks()
     apiModule.listProviders.mockResolvedValue(providerList)
     apiModule.listTasks.mockResolvedValue([])
@@ -340,11 +340,31 @@ describe("Settings page - AI Provider 库 & 默认工作流配置", () => {
     expect(optionTexts).toEqual(["DeepSeek"])
     expect(optionTexts).not.toContain("MinerU")
   })
+
+  it("persists default workflow config to localStorage when changed", async () => {
+    renderSettings()
+    const ocrSelect = (await screen.findByLabelText(
+      "默认 OCR Provider",
+    )) as HTMLSelectElement
+    const transSelect = screen.getByLabelText(
+      "默认翻译 Provider",
+    ) as HTMLSelectElement
+
+    fireEvent.change(ocrSelect, { target: { value: "mineru" } })
+    fireEvent.change(transSelect, { target: { value: "deepseek" } })
+
+    const stored = JSON.parse(
+      localStorage.getItem("greatocr.workflowConfig") || "{}",
+    )
+    expect(stored.ocrProviderId).toBe("mineru")
+    expect(stored.translationProviderId).toBe("deepseek")
+  })
 })
 
 describe("New Task page - AI Processing workflow", () => {
   beforeEach(() => {
     cleanup()
+    localStorage.clear()
     vi.clearAllMocks()
     apiModule.listProviders.mockResolvedValue(providerList)
     apiModule.listTasks.mockResolvedValue([])
@@ -504,11 +524,80 @@ describe("New Task page - AI Processing workflow", () => {
     ).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "开始 OCR" })).toBeNull()
   })
+
+  it("starts a task using the OCR Provider from saved config (not listProviders()[0])", async () => {
+    // 后端返回的第一个 Provider 是 fake-default，证明新建任务页不使用后端列表第一个。
+    apiModule.listProviders.mockResolvedValue([
+      {
+        profile_id: "fake-default",
+        display_name: "Fake Provider",
+        adapter_type: "fake",
+        endpoint: null,
+        model: null,
+        public: false,
+        capabilities: {},
+        approved_fallback_ids: [],
+        credential: { configured: false, masked: null },
+      },
+    ])
+    apiModule.uploadFile.mockResolvedValue({
+      task: makeTask({ task_id: "task-x", status: "paused" }),
+      file_path: "x",
+      size_bytes: 10,
+    })
+    apiModule.startTask.mockResolvedValue(
+      makeTask({ task_id: "task-x", status: "running" }),
+    )
+    apiModule.getTask.mockResolvedValue(
+      makeTask({ task_id: "task-x", status: "succeeded" }),
+    )
+
+    // 默认配置：ocr=mineru（profileId=mineru-default）
+    localStorage.setItem(
+      "greatocr.workflowConfig",
+      JSON.stringify({ ocrProviderId: "mineru", translationProviderId: "deepseek" }),
+    )
+    renderNewTask()
+    // Current Workflow 显示 MinerU（来自配置，而非后端 fake-default）
+    expect(await screen.findByText(/OCR Provider：MinerU/)).toBeInTheDocument()
+
+    selectPdf()
+    fireEvent.click(screen.getByRole("button", { name: "开始 OCR" }))
+
+    await waitFor(() => {
+      expect(apiModule.uploadFile).toHaveBeenCalledWith(
+        expect.any(File),
+        expect.objectContaining({ providerProfileId: "mineru-default" }),
+      )
+    })
+    // 明确不应使用后端列表的第一个 Provider
+    expect(apiModule.uploadFile).not.toHaveBeenCalledWith(
+      expect.any(File),
+      expect.objectContaining({ providerProfileId: "fake-default" }),
+    )
+  })
+
+  it("reflects a non-default saved OCR Provider in Current Workflow", async () => {
+    // 选择 azure-doc-intel（catalog 中具备 OCR 能力的 Provider，非 MinerU），
+    // 证明新建任务页读取保存的配置而非写死 MinerU。
+    localStorage.setItem(
+      "greatocr.workflowConfig",
+      JSON.stringify({
+        ocrProviderId: "azure-doc-intel",
+        translationProviderId: "deepseek",
+      }),
+    )
+    renderNewTask()
+    expect(
+      await screen.findByText(/OCR Provider：Azure Document Intelligence/),
+    ).toBeInTheDocument()
+  })
 })
 
 describe("Settings page - AI Provider Library & Default Workflow", () => {
   beforeEach(() => {
     cleanup()
+    localStorage.clear()
     vi.clearAllMocks()
     apiModule.listProviders.mockResolvedValue(providerList)
     apiModule.listTasks.mockResolvedValue([])

@@ -40,11 +40,14 @@ import {
   getOcrProviderOptions,
   getProviderById,
   getTranslationProviderOptions,
+  loadWorkflowConfig,
+  saveWorkflowConfig,
   type AiModeValue,
   type AiProviderCatalogEntry,
   type SensitiveValue,
   type TargetLanguage,
   type TranslationMode,
+  type WorkflowConfig,
 } from "./aiProcessing"
 
 type HealthState = "loading" | "ok" | "error"
@@ -226,8 +229,8 @@ function NewTaskPage() {
   const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
-  const [providers, setProviders] = useState<ProviderView[]>([])
-  const [selectedProvider, setSelectedProvider] = useState("")
+  // 默认工作流配置（来自 Settings 的 localStorage；不取后端列表第一个 Provider）。
+  const [workflowConfig] = useState<WorkflowConfig>(() => loadWorkflowConfig())
   const [pageRange, setPageRange] = useState("")
   const [sensitive, setSensitive] = useState<SensitiveValue>(DEFAULT_SENSITIVE)
   const [aiMode, setAiMode] = useState<AiModeValue>(DEFAULT_AI_MODE)
@@ -246,17 +249,6 @@ function NewTaskPage() {
   const [progressMsg, setProgressMsg] = useState("")
   const pageRangeError = validatePageRange(pageRange)
   const pdfSelected = isPdfFile(file)
-
-  useEffect(() => {
-    listProviders()
-      .then((list) => {
-        setProviders(list)
-        if (list.length > 0) {
-          setSelectedProvider(list[0].profile_id)
-        }
-      })
-      .catch(() => {})
-  }, [])
 
   useEffect(() => {
     getDefaultOutputDir()
@@ -306,7 +298,7 @@ function NewTaskPage() {
 
     try {
       const uploaded = await uploadFile(file, {
-        providerProfileId: selectedProvider,
+        providerProfileId: selectedProviderProfileId,
         pages: pdfSelected ? pageRange : "",
         outputDir,
       })
@@ -329,28 +321,31 @@ function NewTaskPage() {
     }
   }
 
-  const providerReady = !!providers.find(
-    (provider) => provider.profile_id === selectedProvider,
-  )?.credential?.configured
-
   const currentMode =
     AI_PROCESSING_MODES.find((mode) => mode.value === aiMode) ??
     AI_PROCESSING_MODES[0]
 
-  // 当前工作流（与 Settings 默认工作流配置共用同一份前端状态）。
-  const ocrProvider = getProviderById(DEFAULT_WORKFLOW_CONFIG.ocrProviderId)
-  const translationProvider = getProviderById(
-    DEFAULT_WORKFLOW_CONFIG.translationProviderId,
+  // 默认 OCR Provider 对应的 catalog 条目（来自 Settings 保存的工作流配置）。
+  const selectedOcrProvider = getProviderById(workflowConfig.ocrProviderId)
+  const selectedTranslationProvider = getProviderById(
+    workflowConfig.translationProviderId,
   )
-  const ocrProviderName = ocrProvider?.displayName ?? DEFAULT_OCR_PROVIDER
+  // 上传时使用的 provider_profile_id 由 catalog 推导，不写死、不取后端列表第一个。
+  const selectedProviderProfileId =
+    selectedOcrProvider?.profileId ??
+    getProviderById(DEFAULT_WORKFLOW_CONFIG.ocrProviderId)?.profileId ??
+    ""
+
+  // 当前工作流（与 Settings 默认工作流配置共用同一份前端状态）。
+  const ocrProviderName = selectedOcrProvider?.displayName ?? DEFAULT_OCR_PROVIDER
   const translationProviderName =
-    translationProvider?.displayName ?? DEFAULT_TRANSLATION_PROVIDER
+    selectedTranslationProvider?.displayName ?? DEFAULT_TRANSLATION_PROVIDER
 
   // 敏感文件前端校验：检查本次会使用的 Provider 是否允许处理敏感文件。
   const usedProviders: AiProviderCatalogEntry[] = (
     aiMode === "translation"
-      ? [ocrProvider, translationProvider]
-      : [ocrProvider]
+      ? [selectedOcrProvider, selectedTranslationProvider]
+      : [selectedOcrProvider]
   ).filter((provider): provider is AiProviderCatalogEntry => !!provider)
   const sensitiveBlocked =
     sensitive === "yes" &&
@@ -649,9 +644,8 @@ function NewTaskPage() {
         onClick={handleSubmit}
         disabled={
           !file ||
-          !selectedProvider ||
+          !selectedProviderProfileId ||
           phase !== "idle" ||
-          !providerReady ||
           sensitiveBlocked
         }
         style={{
@@ -1346,12 +1340,12 @@ function SettingsPage() {
   const [connectionResult, setConnectionResult] = useState<Record<string, string>>({})
   const [addProviderNotice, setAddProviderNotice] = useState("")
 
-  // 默认工作流配置（UI 前端状态，本任务不持久化 / 不写后端）。
-  const [defaultOcrProviderId, setDefaultOcrProviderId] = useState(
-    DEFAULT_WORKFLOW_CONFIG.ocrProviderId,
+  // 默认工作流配置：初始化自 localStorage（Settings 选择会持久化到前端，不写后端）。
+  const [defaultOcrProviderId, setDefaultOcrProviderId] = useState(() =>
+    loadWorkflowConfig().ocrProviderId,
   )
   const [defaultTranslationProviderId, setDefaultTranslationProviderId] = useState(
-    DEFAULT_WORKFLOW_CONFIG.translationProviderId,
+    () => loadWorkflowConfig().translationProviderId,
   )
   const ocrProviderOptions = getOcrProviderOptions()
   const translationProviderOptions = getTranslationProviderOptions()
@@ -1875,7 +1869,15 @@ function SettingsPage() {
                 id="default-ocr-provider"
                 aria-label="默认 OCR Provider"
                 value={defaultOcrProviderId}
-                onChange={(event) => setDefaultOcrProviderId(event.target.value)}
+                onChange={(event) => {
+                  const next = event.target.value
+                  setDefaultOcrProviderId(next)
+                  // 持久化到前端 localStorage（仅状态，不写后端）。
+                  saveWorkflowConfig({
+                    ocrProviderId: next,
+                    translationProviderId: defaultTranslationProviderId,
+                  })
+                }}
                 style={selectStyle}
               >
                 {ocrProviderOptions.map((provider) => (
@@ -1894,9 +1896,15 @@ function SettingsPage() {
                 id="default-translation-provider"
                 aria-label="默认翻译 Provider"
                 value={defaultTranslationProviderId}
-                onChange={(event) =>
-                  setDefaultTranslationProviderId(event.target.value)
-                }
+                onChange={(event) => {
+                  const next = event.target.value
+                  setDefaultTranslationProviderId(next)
+                  // 持久化到前端 localStorage（仅状态，不写后端）。
+                  saveWorkflowConfig({
+                    ocrProviderId: defaultOcrProviderId,
+                    translationProviderId: next,
+                  })
+                }}
                 style={selectStyle}
               >
                 {translationProviderOptions.map((provider) => (

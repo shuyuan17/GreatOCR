@@ -139,7 +139,7 @@ export function getTranslationProviderOptions(): AiProviderCatalogEntry[] {
   )
 }
 
-// 默认工作流配置（UI 展示用，本任务不做真实保存 / 持久化）。
+// 默认工作流配置（UI 展示与提交用的前端默认值）。
 // 新建任务页与设置页共用，保证“当前工作流”与默认 Provider 下拉一致。
 export const DEFAULT_WORKFLOW_CONFIG: {
   ocrProviderId: string
@@ -147,4 +147,50 @@ export const DEFAULT_WORKFLOW_CONFIG: {
 } = {
   ocrProviderId: "mineru",
   translationProviderId: "deepseek",
+}
+
+// ---------------------------------------------------------------------------
+// 默认工作流配置持久化（仅前端 localStorage，不写后端 / 不连数据库）
+// ---------------------------------------------------------------------------
+
+const WORKFLOW_CONFIG_STORAGE_KEY = "greatocr.workflowConfig"
+
+export interface WorkflowConfig {
+  ocrProviderId: string
+  translationProviderId: string
+}
+
+// 读取保存的默认工作流配置：localStorage 优先，缺失 / 损坏 / 非法 id 时回退默认值。
+// 仅前端状态，不影响后端 Provider 列表。
+export function loadWorkflowConfig(): WorkflowConfig {
+  const fallback: WorkflowConfig = {
+    ocrProviderId: DEFAULT_WORKFLOW_CONFIG.ocrProviderId,
+    translationProviderId: DEFAULT_WORKFLOW_CONFIG.translationProviderId,
+  }
+  try {
+    const raw = localStorage.getItem(WORKFLOW_CONFIG_STORAGE_KEY)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw) as Partial<WorkflowConfig>
+    const ocrId = parsed.ocrProviderId
+    const transId = parsed.translationProviderId
+    return {
+      ocrProviderId:
+        ocrId && getProviderById(ocrId) ? ocrId : fallback.ocrProviderId,
+      translationProviderId:
+        transId && getProviderById(transId)
+          ? transId
+          : fallback.translationProviderId,
+    }
+  } catch {
+    return fallback
+  }
+}
+
+// 保存默认工作流配置到 localStorage（仅前端状态）。
+export function saveWorkflowConfig(config: WorkflowConfig): void {
+  try {
+    localStorage.setItem(WORKFLOW_CONFIG_STORAGE_KEY, JSON.stringify(config))
+  } catch {
+    // 忽略存储异常（例如隐私模式禁用 localStorage）
+  }
 }
