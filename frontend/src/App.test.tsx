@@ -36,6 +36,9 @@ function makeResultSummary(
     qualityExists?: boolean
     translatedExists?: boolean
     errorMessage?: string | null
+    resultFilename?: string
+    qualityFilename?: string
+    translatedFilename?: string
   } = {},
 ) {
   const resultExists = overrides.resultExists ?? true
@@ -49,7 +52,7 @@ function makeResultSummary(
     files: {
       result_docx: {
         key: "result_docx",
-        filename: "result.docx",
+        filename: overrides.resultFilename ?? "sample.docx",
         exists: resultExists,
         download_path: resultExists
           ? `/api/tasks/${task.task_id}/download/result.docx`
@@ -57,7 +60,7 @@ function makeResultSummary(
       },
       quality_report_docx: {
         key: "quality_report_docx",
-        filename: "quality-report.docx",
+        filename: overrides.qualityFilename ?? "quality-report.docx",
         exists: qualityExists,
         download_path: qualityExists
           ? `/api/tasks/${task.task_id}/download/quality-report.docx`
@@ -65,7 +68,7 @@ function makeResultSummary(
       },
       translated_docx: {
         key: "translated_docx",
-        filename: "translated_result.docx",
+        filename: overrides.translatedFilename ?? "sample_翻译.docx",
         exists: translatedExists,
         download_path: translatedExists
           ? `/api/tasks/${task.task_id}/download/translated_result.docx`
@@ -603,9 +606,38 @@ describe("New Task page - AI Processing workflow", () => {
   it("OCR + Translation shows translated_result.docx in Output Preview", async () => {
     renderNewTask()
     const mode = screen.getByLabelText("Processing Mode") as HTMLSelectElement
+    fireEvent.change(screen.getByLabelText("选择文件"), {
+      target: {
+        files: [new File(["pdf"], "英文签字盖章有页眉的.pdf", { type: "application/pdf" })],
+      },
+    })
     fireEvent.change(mode, { target: { value: "translation" } })
-    expect(await screen.findByText("translated_result.docx")).toBeInTheDocument()
-    expect(screen.getByText("result.docx")).toBeInTheDocument()
+    expect(await screen.findByText("英文签字盖章有页眉的_翻译.docx")).toBeInTheDocument()
+    expect(screen.getByText("英文签字盖章有页眉的.docx")).toBeInTheDocument()
+  })
+
+  it("shows public filenames in task center download titles", async () => {
+    apiModule.listTasks.mockResolvedValue([
+      makeTask({ task_id: "task-5", display_name: "contract.pdf", status: "succeeded" }),
+    ])
+    apiModule.getTaskResultFiles.mockResolvedValue(
+      makeResultSummary({
+        task: { task_id: "task-5", display_name: "contract.pdf", status: "succeeded" },
+        resultFilename: "contract.docx",
+        translatedFilename: "contract_翻译.docx",
+        translatedExists: true,
+      }),
+    )
+
+    render(
+      <MemoryRouter initialEntries={["/tasks?task=task-5"]}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    await screen.findByText("结果")
+    expect(screen.getByTitle("下载 contract.docx")).toBeInTheDocument()
+    expect(screen.getByTitle("下载 contract_翻译.docx")).toBeInTheDocument()
   })
 
   it("changes the submit button label with the AI mode", async () => {

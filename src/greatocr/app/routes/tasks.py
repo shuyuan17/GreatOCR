@@ -30,6 +30,20 @@ RESULT_FILES = {
 }
 
 
+def _task_output_stem(task: TaskRecord) -> str:
+    source_name = Path(task.source_path).name if task.source_path else task.display_name
+    stem = Path(source_name).stem.strip()
+    return stem or "GreatOCR_Result"
+
+
+def _public_result_filename(task: TaskRecord, internal_filename: str) -> str:
+    if internal_filename == "result.docx":
+        return f"{_task_output_stem(task)}.docx"
+    if internal_filename == "translated_result.docx":
+        return f"{_task_output_stem(task)}_翻译.docx"
+    return internal_filename
+
+
 class StartConfirmation(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -237,7 +251,7 @@ def task_result_files(task_id: str, request: Request) -> TaskResultSummary:
     files = {
         key: TaskResultFileEntry(
             key=key,
-            filename=filename,
+            filename=_public_result_filename(task, filename),
             exists=(output_dir / filename).is_file(),
             download_path=(
                 f"/api/tasks/{task_id}/download/{filename}"
@@ -274,7 +288,7 @@ def download_task_result(task_id: str, filename: str, request: Request) -> FileR
                 "message": ERROR_MESSAGES["RESULT_FILE_NOT_FOUND"],
             },
         )
-    return FileResponse(target, filename=filename)
+    return FileResponse(target, filename=_public_result_filename(task, filename))
 
 
 class UploadResult(BaseModel):

@@ -102,6 +102,14 @@ function canViewResults(status: TaskStatus): boolean {
   return TERMINAL_STATUSES.includes(status)
 }
 
+function buildPreviewFilenames(file: File | null, aiMode: AiModeValue): string[] {
+  const baseName = file?.name ? file.name.replace(/\.[^.]+$/, "") : "result"
+  if (aiMode === "translation") {
+    return [`${baseName}.docx`, `${baseName}_翻译.docx`]
+  }
+  return [`${baseName}.docx`]
+}
+
 function HealthBadge() {
   const [state, setState] = useState<HealthState>("loading")
   const [label, setLabel] = useState("正在连接后端...")
@@ -352,6 +360,7 @@ function NewTaskPage() {
   const currentMode =
     AI_PROCESSING_MODES.find((mode) => mode.value === aiMode) ??
     AI_PROCESSING_MODES[0]
+  const previewFilenames = buildPreviewFilenames(file, aiMode)
 
   // 默认 OCR Provider 对应的 catalog 条目（来自 Settings 保存的工作流配置）。
   const selectedOcrProvider = resolveProviderEntry(workflowConfig.ocrProviderId)
@@ -625,14 +634,9 @@ function NewTaskPage() {
             lineHeight: 1.8,
           }}
         >
-          {aiMode === "translation" ? (
-            <>
-              <li>result.docx</li>
-              <li>translated_result.docx</li>
-            </>
-          ) : (
-            <li>result.docx</li>
-          )}
+          {previewFilenames.map((name) => (
+            <li key={name}>{name}</li>
+          ))}
         </ul>
       </div>
 
@@ -1224,7 +1228,7 @@ function TaskCenterPage() {
                                     textDecoration: "underline",
                                     padding: "0 4px",
                                   }}
-                                  title="下载 result.docx"
+                                  title={`下载 ${summary.files.result_docx.filename}`}
                                 >
                                   结果
                                 </a>
@@ -1249,7 +1253,7 @@ function TaskCenterPage() {
                                     textDecoration: "underline",
                                     padding: "0 4px",
                                   }}
-                                  title="下载 quality-report.docx"
+                                  title={`下载 ${summary.files.quality_report_docx.filename}`}
                                 >
                                   报告
                                 </a>
@@ -1274,7 +1278,7 @@ function TaskCenterPage() {
                                     textDecoration: "underline",
                                     padding: "0 4px",
                                   }}
-                                  title="下载 translated_result.docx"
+                                  title={`下载 ${summary.files.translated_docx.filename}`}
                                 >
                                   译文
                                 </a>

@@ -191,7 +191,7 @@ def test_task_result_summary_reports_available_files(api) -> None:
     payload = response.json()
     assert payload["task"]["task_id"] == task["task_id"]
     assert payload["files"]["result_docx"]["exists"] is True
-    assert payload["files"]["result_docx"]["filename"] == "result.docx"
+    assert payload["files"]["result_docx"]["filename"] == "summary.docx"
     assert (
         payload["files"]["result_docx"]["download_path"]
         == f"/api/tasks/{task['task_id']}/download/result.docx"
@@ -221,6 +221,26 @@ def test_task_result_summary_keeps_internal_versions_hidden(api) -> None:
         "result_docx",
         "translated_docx",
     ]
+    assert "result-v1.docx" not in response.text
+
+
+def test_task_result_summary_uses_public_translation_filename(api) -> None:
+    client, database, _, tmp_path = api
+    task = create_task(client, make_pdf(tmp_path / "contract.pdf"), sensitive=False)
+    output_dir = Path(database.get_task(task["task_id"]).output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "result.docx").write_bytes(b"docx")
+    (output_dir / "translated_result.docx").write_bytes(b"translated")
+
+    response = client.get(
+        f"/api/tasks/{task['task_id']}/result-files",
+        headers=headers(),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["files"]["result_docx"]["filename"] == "contract.docx"
+    assert payload["files"]["translated_docx"]["filename"] == "contract_翻译.docx"
     assert "result-v1.docx" not in response.text
 
 
@@ -278,8 +298,26 @@ def test_task_result_download_returns_standard_file(api) -> None:
     assert response.content == b"docx"
     assert (
         response.headers["content-disposition"]
-        == 'attachment; filename="result.docx"'
+        == 'attachment; filename="download.docx"'
     )
+
+
+def test_task_result_download_uses_public_translation_filename(api) -> None:
+    client, database, _, tmp_path = api
+    task = create_task(client, make_pdf(tmp_path / "minutes.pdf"), sensitive=False)
+    output_dir = Path(database.get_task(task["task_id"]).output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "translated_result.docx").write_bytes(b"docx")
+
+    response = client.get(
+        f"/api/tasks/{task['task_id']}/download/translated_result.docx",
+        headers=headers(),
+    )
+
+    assert response.status_code == 200
+    assert "filename*=utf-8''minutes_%E7%BF%BB%E8%AF%91.docx" in response.headers[
+        "content-disposition"
+    ]
 
 
 def test_task_result_download_returns_not_found_for_missing_file(api) -> None:
