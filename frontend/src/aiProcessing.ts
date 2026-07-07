@@ -22,12 +22,12 @@ export const AI_PROCESSING_MODES: Option<AiModeValue>[] = [
   {
     value: "ocr",
     label: "OCR Only",
-    description: "仅执行 OCR，生成 result.docx",
+    description: "仅执行 OCR，生成 OCR 结果文档",
   },
   {
     value: "translation",
     label: "OCR + Translation",
-    description: "OCR 完成后执行 AI 翻译，生成 translated_result.docx",
+    description: "OCR 完成后执行 AI 翻译，生成翻译结果文档",
   },
 ]
 export const DEFAULT_AI_MODE: AiModeValue = "ocr"

@@ -124,7 +124,9 @@ def test_task_controls_versions_and_open_output(api) -> None:
     )
     output_dir = Path(database.get_task(task_id).output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "result-v1.docx").write_bytes(b"test")
+    versions_dir = output_dir / "intermediates" / "versions"
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    (versions_dir / "result-v1.docx").write_bytes(b"test")
     versions = client.get(f"/api/tasks/{task_id}/versions", headers=headers())
     opened_response = client.post(
         f"/api/tasks/{task_id}/open-output",
@@ -180,7 +182,7 @@ def test_task_result_summary_reports_available_files(api) -> None:
     task = create_task(client, make_pdf(tmp_path / "summary.pdf"), sensitive=False)
     output_dir = Path(database.get_task(task["task_id"]).output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "result.docx").write_bytes(b"docx")
+    (output_dir / "summary.docx").write_bytes(b"docx")
 
     response = client.get(
         f"/api/tasks/{task['task_id']}/result-files",
@@ -194,7 +196,7 @@ def test_task_result_summary_reports_available_files(api) -> None:
     assert payload["files"]["result_docx"]["filename"] == "summary.docx"
     assert (
         payload["files"]["result_docx"]["download_path"]
-        == f"/api/tasks/{task['task_id']}/download/result.docx"
+        == f"/api/tasks/{task['task_id']}/download/summary.docx"
     )
     assert payload["files"]["quality_report_docx"]["exists"] is False
     assert payload["files"]["quality_report_docx"]["download_path"] is None
@@ -206,8 +208,10 @@ def test_task_result_summary_keeps_internal_versions_hidden(api) -> None:
     task = create_task(client, make_pdf(tmp_path / "hidden-version.pdf"), sensitive=False)
     output_dir = Path(database.get_task(task["task_id"]).output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "result.docx").write_bytes(b"docx")
-    (output_dir / "result-v1.docx").write_bytes(b"versioned")
+    (output_dir / "hidden-version.docx").write_bytes(b"docx")
+    versions_dir = output_dir / "intermediates" / "versions"
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    (versions_dir / "result-v1.docx").write_bytes(b"versioned")
 
     response = client.get(
         f"/api/tasks/{task['task_id']}/result-files",
@@ -229,8 +233,8 @@ def test_task_result_summary_uses_public_translation_filename(api) -> None:
     task = create_task(client, make_pdf(tmp_path / "contract.pdf"), sensitive=False)
     output_dir = Path(database.get_task(task["task_id"]).output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "result.docx").write_bytes(b"docx")
-    (output_dir / "translated_result.docx").write_bytes(b"translated")
+    (output_dir / "contract.docx").write_bytes(b"docx")
+    (output_dir / "contract_翻译.docx").write_bytes(b"translated")
 
     response = client.get(
         f"/api/tasks/{task['task_id']}/result-files",
@@ -287,10 +291,10 @@ def test_task_result_download_returns_standard_file(api) -> None:
     task = create_task(client, make_pdf(tmp_path / "download.pdf"), sensitive=False)
     output_dir = Path(database.get_task(task["task_id"]).output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "result.docx").write_bytes(b"docx")
+    (output_dir / "download.docx").write_bytes(b"docx")
 
     response = client.get(
-        f"/api/tasks/{task['task_id']}/download/result.docx",
+        f"/api/tasks/{task['task_id']}/download/download.docx",
         headers=headers(),
     )
 
@@ -307,10 +311,10 @@ def test_task_result_download_uses_public_translation_filename(api) -> None:
     task = create_task(client, make_pdf(tmp_path / "minutes.pdf"), sensitive=False)
     output_dir = Path(database.get_task(task["task_id"]).output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "translated_result.docx").write_bytes(b"docx")
+    (output_dir / "minutes_翻译.docx").write_bytes(b"docx")
 
     response = client.get(
-        f"/api/tasks/{task['task_id']}/download/translated_result.docx",
+        f"/api/tasks/{task['task_id']}/download/minutes_翻译.docx",
         headers=headers(),
     )
 

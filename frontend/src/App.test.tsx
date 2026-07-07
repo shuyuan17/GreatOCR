@@ -55,7 +55,7 @@ function makeResultSummary(
         filename: overrides.resultFilename ?? "sample.docx",
         exists: resultExists,
         download_path: resultExists
-          ? `/api/tasks/${task.task_id}/download/result.docx`
+          ? `/api/tasks/${task.task_id}/download/${overrides.resultFilename ?? "sample.docx"}`
           : null,
       },
       quality_report_docx: {
@@ -71,7 +71,7 @@ function makeResultSummary(
         filename: overrides.translatedFilename ?? "sample_翻译.docx",
         exists: translatedExists,
         download_path: translatedExists
-          ? `/api/tasks/${task.task_id}/download/translated_result.docx`
+          ? `/api/tasks/${task.task_id}/download/${overrides.translatedFilename ?? "sample_翻译.docx"}`
           : null,
       },
     },
@@ -203,7 +203,7 @@ describe("GreatOCR application shell", () => {
       </MemoryRouter>,
     )
 
-    expect(await screen.findByText("结果")).toBeInTheDocument()
+    expect(await screen.findByText("sample.docx")).toBeInTheDocument()
   })
 
   it("shows a friendly message when quality report is missing", async () => {
@@ -224,10 +224,10 @@ describe("GreatOCR application shell", () => {
       </MemoryRouter>,
     )
 
-    // 结果链接应存在
-    expect(await screen.findByText("结果")).toBeInTheDocument()
-    // 质量报告因为不存在，不应有"报告"链接
-    expect(screen.queryByText("报告")).not.toBeInTheDocument()
+    // OCR 结果链接应存在
+    expect(await screen.findByText("sample.docx")).toBeInTheDocument()
+    // 质量报告因为不存在，不应有质量报告文件链接
+    expect(screen.queryByText("quality-report.docx")).not.toBeInTheDocument()
   })
 
   it("shows a safe translation failure reason for partial tasks", async () => {
@@ -275,7 +275,7 @@ describe("GreatOCR application shell", () => {
       </MemoryRouter>,
     )
 
-    await screen.findByText("结果")
+    await screen.findByText("sample.docx")
     expect(
       screen.queryByText(
         "Translation Provider authentication failed. Please check API Key configuration.",
@@ -502,7 +502,7 @@ describe("New Task page - AI Processing workflow", () => {
     expect(mode.value).toBe("ocr")
     expect(screen.getByText("OCR Only")).toBeInTheDocument()
     // OCR Only 说明文案
-    expect(screen.getByText("仅执行 OCR，生成 result.docx")).toBeInTheDocument()
+    expect(screen.getByText("仅执行 OCR，生成 OCR 结果文档")).toBeInTheDocument()
   })
 
   it("switches to OCR + Translation and reveals translation config", async () => {
@@ -531,7 +531,7 @@ describe("New Task page - AI Processing workflow", () => {
 
     // Translation 说明文案
     expect(
-      screen.getByText("OCR 完成后执行 AI 翻译，生成 translated_result.docx"),
+      screen.getByText("OCR 完成后执行 AI 翻译，生成翻译结果文档"),
     ).toBeInTheDocument()
   })
 
@@ -603,7 +603,7 @@ describe("New Task page - AI Processing workflow", () => {
     expect(submit.disabled).toBe(false)
   })
 
-  it("OCR + Translation shows translated_result.docx in Output Preview", async () => {
+  it("OCR + Translation shows public filenames in Output Preview", async () => {
     renderNewTask()
     const mode = screen.getByLabelText("Processing Mode") as HTMLSelectElement
     fireEvent.change(screen.getByLabelText("选择文件"), {
@@ -635,9 +635,9 @@ describe("New Task page - AI Processing workflow", () => {
       </MemoryRouter>,
     )
 
-    await screen.findByText("结果")
-    expect(screen.getByTitle("下载 contract.docx")).toBeInTheDocument()
-    expect(screen.getByTitle("下载 contract_翻译.docx")).toBeInTheDocument()
+    await screen.findByText("contract.docx")
+    expect(screen.getByRole("link", { name: "contract.docx" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "contract_翻译.docx" })).toBeInTheDocument()
   })
 
   it("changes the submit button label with the AI mode", async () => {

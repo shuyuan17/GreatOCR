@@ -12,6 +12,7 @@ from greatocr.app.schemas import NewTask, TaskRecord
 from greatocr.app.services.credentials import CredentialService
 from greatocr.app.services.thumbnails import Thumbnail, ThumbnailService
 from greatocr.ingest.preflight import PreflightResult, run_preflight
+from greatocr.task.output_files import internal_versions_dir
 
 
 class TaskServiceError(RuntimeError):
@@ -178,7 +179,10 @@ class TaskService:
 
     def versions(self, task_id: str) -> list[str]:
         task = self.get(task_id)
-        return sorted(path.name for path in Path(task.output_dir).glob("result-v*.docx"))
+        return sorted(
+            path.name
+            for path in internal_versions_dir(Path(task.output_dir)).glob("result-v*.docx")
+        )
 
     def open_output(self, task_id: str) -> None:
         task = self.get(task_id)

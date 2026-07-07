@@ -19,29 +19,66 @@ from greatocr.app.services.task_service import TaskService, TaskServiceError
 from greatocr.ingest.preflight import InvalidPdfError, run_preflight
 from greatocr.selection.page_ranges import PageRangeError, parse_page_ranges
 from greatocr.task.manifest import load_manifest
+from greatocr.task.output_files import result_docx_name, translated_docx_name
 
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
-RESULT_FILES = {
-    "result_docx": "result.docx",
-    "quality_report_docx": "quality-report.docx",
-    "translated_docx": "translated_result.docx",
-}
+RESULT_FILE_KEYS = (
+    "result_docx",
+    "quality_report_docx",
+    "translated_docx",
+)
 
 
-def _task_output_stem(task: TaskRecord) -> str:
-    source_name = Path(task.source_path).name if task.source_path else task.display_name
-    stem = Path(source_name).stem.strip()
-    return stem or "GreatOCR_Result"
+def _task_source_name(task: TaskRecord) -> str:
+    return Path(task.source_path).name if task.source_path else task.display_name
 
 
-def _public_result_filename(task: TaskRecord, internal_filename: str) -> str:
-    if internal_filename == "result.docx":
-        return f"{_task_output_stem(task)}.docx"
-    if internal_filename == "translated_result.docx":
-        return f"{_task_output_stem(task)}_翻译.docx"
-    return internal_filename
+def _expected_result_filenames(task: TaskRecord) -> dict[str, str]:
+    source_name = _task_source_name(task)
+    return {
+        "result_docx": result_docx_name(source_name),
+        "quality_report_docx": "quality-report.docx",
+        "translated_docx": translated_docx_name(source_name),
+    }
+
+
+def _legacy_result_filenames(key: str) -> tuple[str, ...]:
+    if key == "result_docx":
+        return ("result.docx",)
+    if key == "translated_docx":
+        return ("translated_result.docx",)
+    if key == "quality_report_docx":
+        return ("quality-report.docx",)
+    return ()
+
+
+def _resolve_result_file(output_dir: Path, task: TaskRecord, key: str) -> tuple[str, Path] | None:
+    public_name = _expected_result_filenames(task)[key]
+    current = output_dir / public_name
+    if current.is_file():
+        return public_name, current
+    for legacy_name in _legacy_result_filenames(key):
+        legacy = output_dir / legacy_name
+        if legacy.is_file():
+            return public_name, legacy
+    return None
+
+
+def _resolve_download_target(
+    output_dir: Path,
+    task: TaskRecord,
+    filename: str,
+) -> tuple[str, Path] | None:
+    for key in RESULT_FILE_KEYS:
+        public_name = _expected_result_filenames(task)[key]
+        if filename not in {public_name, *_legacy_result_filenames(key)}:
+            continue
+        resolved = _resolve_result_file(output_dir, task, key)
+        if resolved is not None:
+            return resolved
+    return None
 
 
 class StartConfirmation(BaseModel):
@@ -248,19 +285,20 @@ def batch_delete_tasks(payload: BatchDeleteRequest, request: Request) -> dict[st
 def task_result_files(task_id: str, request: Request) -> TaskResultSummary:
     task = _run(lambda: _service(request).get(task_id))
     output_dir = Path(task.output_dir)
-    files = {
-        key: TaskResultFileEntry(
+    files: dict[str, TaskResultFileEntry] = {}
+    for key in RESULT_FILE_KEYS:
+        public_name = _expected_result_filenames(task)[key]
+        resolved = _resolve_result_file(output_dir, task, key)
+        files[key] = TaskResultFileEntry(
             key=key,
-            filename=_public_result_filename(task, filename),
-            exists=(output_dir / filename).is_file(),
+            filename=public_name,
+            exists=resolved is not None,
             download_path=(
-                f"/api/tasks/{task_id}/download/{filename}"
-                if (output_dir / filename).is_file()
+                f"/api/tasks/{task_id}/download/{public_name}"
+                if resolved is not None
                 else None
             ),
         )
-        for key, filename in RESULT_FILES.items()
-    }
     return TaskResultSummary(
         task=task,
         files=files,
@@ -271,7 +309,8 @@ def task_result_files(task_id: str, request: Request) -> TaskResultSummary:
 @router.get("/{task_id}/download/{filename}")
 def download_task_result(task_id: str, filename: str, request: Request) -> FileResponse:
     task = _run(lambda: _service(request).get(task_id))
-    if filename not in RESULT_FILES.values():
+    resolved = _resolve_download_target(Path(task.output_dir), task, filename)
+    if resolved is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={
@@ -279,16 +318,8 @@ def download_task_result(task_id: str, filename: str, request: Request) -> FileR
                 "message": ERROR_MESSAGES["RESULT_FILE_NOT_FOUND"],
             },
         )
-    target = Path(task.output_dir) / filename
-    if not target.is_file():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
-                "code": "RESULT_FILE_NOT_FOUND",
-                "message": ERROR_MESSAGES["RESULT_FILE_NOT_FOUND"],
-            },
-        )
-    return FileResponse(target, filename=_public_result_filename(task, filename))
+    public_name, target = resolved
+    return FileResponse(target, filename=public_name)
 
 
 class UploadResult(BaseModel):

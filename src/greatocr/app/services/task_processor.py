@@ -15,6 +15,7 @@ from greatocr.providers.profiles import ProviderProfile
 from greatocr.providers.registry import ProviderRegistry
 from greatocr.security import DataFlowSummary, RetentionPolicy, SecurityMode
 from greatocr.task.checkpoints import load_or_create_manifest, mark_stage
+from greatocr.task.output_files import result_docx_name, translated_docx_name
 from greatocr.translation import (
     ChatCompletionsTranslator,
     TranslationError,
@@ -118,7 +119,7 @@ class TaskProcessor:
         if task.sensitive and not bool(translation_profile.get("sensitive_allowed", False)):
             raise RuntimeError("敏感文件不允许发送给当前翻译 Provider")
 
-        translated_path = task_dir / "translated_result.docx"
+        translated_path = task_dir / translated_docx_name(source_path.name)
         translated_path.unlink(missing_ok=True)
         manifest = load_or_create_manifest(task_dir, preflight.file_sha256, {})
         manifest = mark_stage(task_dir, manifest, "translation", "running")
@@ -153,7 +154,7 @@ class TaskProcessor:
             manifest,
             "translation",
             "succeeded",
-            outputs={"translated_result": "translated_result.docx"},
+            outputs={"translated_result": translated_docx_name(source_path.name)},
         )
         self.logger(f"[worker] Task {task.task_id} translated -> {translated_path}")
         return "succeeded"

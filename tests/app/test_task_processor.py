@@ -127,8 +127,8 @@ def test_ocr_only_does_not_create_translation_client_and_keeps_only_result_docx(
         task_dir = Path(task.output_dir)
         assert status == "succeeded"
         assert translation_calls == []
-        assert (task_dir / "result.docx").is_file()
-        assert not (task_dir / "translated_result.docx").exists()
+        assert (task_dir / "ocr-only.docx").is_file()
+        assert not (task_dir / "ocr-only_翻译.docx").exists()
     finally:
         database.close()
 
@@ -168,8 +168,8 @@ def test_translation_success_uses_generic_translator_and_preserves_original_resu
         status = processor.process(task)
 
         task_dir = Path(task.output_dir)
-        result_text = docx_text(task_dir / "result.docx")
-        translated_text = docx_text(task_dir / "translated_result.docx")
+        result_text = docx_text(task_dir / "translation-success.docx")
+        translated_text = docx_text(task_dir / "translation-success_翻译.docx")
 
         assert status == "succeeded"
         assert translation_calls == [
@@ -222,8 +222,8 @@ def test_translation_failure_keeps_result_docx_and_returns_partial_without_fake_
         task_dir = Path(task.output_dir)
         manifest = load_manifest(task_dir / "intermediates" / "task-manifest.json")
         assert status == "partial"
-        assert (task_dir / "result.docx").is_file()
-        assert not (task_dir / "translated_result.docx").exists()
+        assert (task_dir / "translation-failure.docx").is_file()
+        assert not (task_dir / "translation-failure_翻译.docx").exists()
         assert manifest.stages["translation"].status == "failed"
         assert (
             manifest.stages["translation"].message

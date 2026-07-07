@@ -20,6 +20,7 @@ from greatocr.security import DataFlowSummary
 from greatocr.selection.page_ranges import PageSelection
 from greatocr.selection.subset_pdf import output_groups, write_subset_pdf
 from greatocr.task.checkpoints import load_or_create_manifest, mark_stage
+from greatocr.task.output_files import result_docx_name
 from greatocr.task.versions import publish_result_version
 from greatocr.validation.checks import run_integrity_checks
 from greatocr.validation.quality import compute_quality_summary
@@ -118,14 +119,18 @@ def run_model_stage(
     return document
 
 
-def run_docx_stage(task_dir: Path, document: Document) -> Document:
+def run_docx_stage(task_dir: Path, document: Document, *, source_name: str | None) -> Document:
     generated_path = task_dir / "intermediates" / "generated-result.docx"
     build_result = build_docx(document, generated_path, task_dir=task_dir)
     validation = validate_docx_package(generated_path)
     if not validation.valid:
         generated_path.unlink(missing_ok=True)
         raise RuntimeError("generated DOCX failed package validation")
-    publish_result_version(task_dir, generated_path)
+    publish_result_version(
+        task_dir,
+        generated_path,
+        latest_name=result_docx_name(source_name),
+    )
     generated_path.unlink(missing_ok=True)
     updated = document.model_copy(
         update={"issues": [*document.issues, *build_result.issues, *validation.issues]},
@@ -309,15 +314,20 @@ def run_pipeline(
                 )
 
         docx_done = resume and manifest.stages.get("docx", None) and manifest.stages["docx"].status == "succeeded"
-        if not (docx_done and (task_dir / "result.docx").exists()):
+        latest_result = task_dir / result_docx_name(security_summary.source_file_name)
+        if not (docx_done and latest_result.exists()):
             manifest = mark_stage(task_dir, manifest, "docx", "running")
-            document = run_docx_stage(task_dir, document)
+            document = run_docx_stage(
+                task_dir,
+                document,
+                source_name=security_summary.source_file_name,
+            )
             manifest = mark_stage(
                 task_dir,
                 manifest,
                 "docx",
                 "succeeded",
-                outputs={"result_docx": "result.docx"},
+                outputs={"result_docx": result_docx_name(security_summary.source_file_name)},
             )
 
         quality_done = resume and manifest.stages.get("quality", None) and manifest.stages["quality"].status == "succeeded"
@@ -386,7 +396,10 @@ def run_selected_page_groups(
             reasoner=reasoner,
             reasoning_enabled=reasoning_enabled,
         )
-        shutil.copy2(group_dir / "result.docx", task_dir / f"result-pages-{label}.docx")
+        shutil.copy2(
+            group_dir / result_docx_name(security_summary.source_file_name),
+            task_dir / f"result-pages-{label}.docx",
+        )
         shutil.copy2(
             group_dir / "quality-report.docx",
             task_dir / f"quality-report-pages-{label}.docx",

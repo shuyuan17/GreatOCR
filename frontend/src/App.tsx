@@ -1230,7 +1230,7 @@ function TaskCenterPage() {
                                   }}
                                   title={`下载 ${summary.files.result_docx.filename}`}
                                 >
-                                  结果
+                                  {summary.files.result_docx.filename}
                                 </a>
                               ) : summary?.files.result_docx.exists ? (
                                 <span
@@ -1241,7 +1241,7 @@ function TaskCenterPage() {
                                   }}
                                   title="文件暂不可下载"
                                 >
-                                  结果
+                                  {summary.files.result_docx.filename}
                                 </span>
                               ) : null}
                               {summary?.files.quality_report_docx.exists && summary.files.quality_report_docx.download_path ? (
@@ -1255,7 +1255,7 @@ function TaskCenterPage() {
                                   }}
                                   title={`下载 ${summary.files.quality_report_docx.filename}`}
                                 >
-                                  报告
+                                  {summary.files.quality_report_docx.filename}
                                 </a>
                               ) : summary?.files.quality_report_docx.exists ? (
                                 <span
@@ -1266,7 +1266,7 @@ function TaskCenterPage() {
                                   }}
                                   title="文件暂不可下载"
                                 >
-                                  报告
+                                  {summary.files.quality_report_docx.filename}
                                 </span>
                               ) : null}
                               {summary?.files.translated_docx.exists && summary.files.translated_docx.download_path ? (
@@ -1280,7 +1280,7 @@ function TaskCenterPage() {
                                   }}
                                   title={`下载 ${summary.files.translated_docx.filename}`}
                                 >
-                                  译文
+                                  {summary.files.translated_docx.filename}
                                 </a>
                               ) : summary?.files.translated_docx.exists ? (
                                 <span
@@ -1291,7 +1291,7 @@ function TaskCenterPage() {
                                   }}
                                   title="文件暂不可下载"
                                 >
-                                  译文
+                                  {summary.files.translated_docx.filename}
                                 </span>
                               ) : null}
                             </div>

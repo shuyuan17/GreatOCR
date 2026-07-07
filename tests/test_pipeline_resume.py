@@ -6,6 +6,7 @@ from greatocr.ingest.preflight import PagePreflight, PreflightResult
 from greatocr.model.document import Document, Page
 from greatocr.pipeline import run_pipeline
 from greatocr.providers.fake import FakeDocumentParser
+from greatocr.task.output_files import result_docx_name
 from greatocr.security import build_data_flow_summary
 from greatocr.task.manifest import load_manifest
 
@@ -98,7 +99,7 @@ def test_resume_from_document_json_after_docx_failure(tmp_path: Path) -> None:
 
     run_pipeline(task_dir, preflight, FailingParser(FIXTURE), make_summary(preflight), resume=True)
 
-    assert (task_dir / "result.docx").is_file()
+    assert (task_dir / result_docx_name(preflight.source_path.name)).is_file()
 
 
 def test_resume_does_not_repeat_succeeded_parse_stage(tmp_path: Path) -> None:

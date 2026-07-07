@@ -13,6 +13,7 @@ from greatocr.reasoning.base import CorrectionProposal, TextReasoner
 from greatocr.security import SecurityMode, approve_data_flow, build_data_flow_summary
 from greatocr.selection.page_ranges import parse_page_ranges
 from greatocr.task.manifest import load_manifest
+from greatocr.task.output_files import result_docx_name
 
 
 FIXTURE = Path("tests/fixtures/provider_outputs/simple_contract.json")
@@ -47,7 +48,7 @@ def test_fake_provider_end_to_end_generates_required_outputs(tmp_path: Path) -> 
 
     run_pipeline(tmp_path / "task", preflight, FakeDocumentParser(FIXTURE), summary)
 
-    assert (tmp_path / "task" / "result.docx").is_file()
+    assert (tmp_path / "task" / result_docx_name(pdf_path.name)).is_file()
     assert (tmp_path / "task" / "quality-report.docx").is_file()
     assert (tmp_path / "task" / "intermediates" / "document.json").is_file()
 
@@ -66,7 +67,7 @@ def test_sensitive_mode_keeps_only_final_outputs(tmp_path: Path) -> None:
 
     run_pipeline(tmp_path / "task", preflight, FakeDocumentParser(FIXTURE), summary)
 
-    assert (tmp_path / "task" / "result.docx").is_file()
+    assert (tmp_path / "task" / result_docx_name(pdf_path.name)).is_file()
     assert (tmp_path / "task" / "quality-report.docx").is_file()
     assert not (tmp_path / "task" / "intermediates").exists()
 
@@ -153,7 +154,7 @@ def test_reasoner_failure_does_not_block_docx_generation(tmp_path: Path) -> None
         reasoning_enabled=True,
     )
 
-    assert (tmp_path / "task" / "result.docx").is_file()
+    assert (tmp_path / "task" / result_docx_name(pdf_path.name)).is_file()
     assert reasoner.calls == 1
     assert "reasoning_failed" in {issue.issue_type for issue in document.issues}
 

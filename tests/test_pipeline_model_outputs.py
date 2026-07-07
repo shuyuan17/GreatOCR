@@ -8,6 +8,7 @@ from greatocr.pipeline import run_docx_stage, run_model_stage, run_parse_stage
 from greatocr.providers.base import ParserJobResult
 from greatocr.providers.fake import FakeDocumentParser
 from greatocr.security import build_data_flow_summary
+from greatocr.task.output_files import result_docx_name
 
 
 FIXTURE = Path("tests/fixtures/provider_outputs/simple_contract.json")
@@ -73,10 +74,10 @@ def test_docx_stage_writes_result_docx(tmp_path: Path) -> None:
     preflight, parser_result = parse_with_fake_provider(tmp_path)
     document = run_model_stage(tmp_path / "task", preflight, parser_result)
 
-    updated = run_docx_stage(tmp_path / "task", document)
+    updated = run_docx_stage(tmp_path / "task", document, source_name=preflight.source_path.name)
 
-    assert (tmp_path / "task" / "result.docx").is_file()
-    assert (tmp_path / "task" / "result-v1.docx").is_file()
+    assert (tmp_path / "task" / result_docx_name(preflight.source_path.name)).is_file()
+    assert (tmp_path / "task" / "intermediates" / "versions" / "result-v1.docx").is_file()
     assert updated.document_id == document.document_id
 
 
@@ -84,7 +85,7 @@ def test_docx_stage_merges_build_issues_into_document(tmp_path: Path) -> None:
     preflight, parser_result = parse_with_fake_provider(tmp_path)
     document = run_model_stage(tmp_path / "task", preflight, parser_result)
 
-    updated = run_docx_stage(tmp_path / "task", document)
+    updated = run_docx_stage(tmp_path / "task", document, source_name=preflight.source_path.name)
 
     assert any(issue.issue_type == "asset_missing" for issue in updated.issues)
 

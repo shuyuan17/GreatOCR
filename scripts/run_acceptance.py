@@ -12,6 +12,7 @@ from greatocr.ingest.preflight import run_preflight
 from greatocr.pipeline import run_pipeline
 from greatocr.providers.fake import FakeDocumentParser
 from greatocr.security import build_data_flow_summary
+from greatocr.task.output_files import result_docx_name
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         run_pipeline(task_dir, preflight, FakeDocumentParser(fixture), summary)
 
         required = [
-            task_dir / "result.docx",
+            task_dir / result_docx_name(pdf_path.name),
             task_dir / "quality-report.docx",
             task_dir / "intermediates" / "document.json",
         ]
