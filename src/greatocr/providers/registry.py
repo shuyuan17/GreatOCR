@@ -63,7 +63,11 @@ class ProviderRegistry:
                 MinerUConfig(base_url=profile.endpoint, api_key=secret),
                 upload_confirmed=False,
             )
+        if profile.adapter_type == "generic_vision":
+            from greatocr.providers.generic_vision import GenericVisionDocumentParser
 
-        from greatocr.providers.generic_vision import GenericVisionDocumentParser
+            return GenericVisionDocumentParser.from_profile(profile, api_key=secret)
 
-        return GenericVisionDocumentParser.from_profile(profile, api_key=secret)
+        raise ValueError(
+            f"provider profile is not an OCR parser adapter: {profile.adapter_type}"
+        )

@@ -51,6 +51,11 @@ export interface TaskRecord {
   requested_action: string | null
   created_at: string
   completed_at: string | null
+  processing_mode: "ocr" | "translation"
+  ocr_provider_profile_id: string | null
+  translation_provider_profile_id: string | null
+  target_language: string | null
+  translation_mode: string | null
 }
 
 export interface TaskResultFileEntry {
@@ -65,6 +70,7 @@ export interface TaskResultSummary {
   files: {
     result_docx: TaskResultFileEntry
     quality_report_docx: TaskResultFileEntry
+    translated_docx: TaskResultFileEntry
   }
 }
 
@@ -186,7 +192,9 @@ export async function testProviderConnection(
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err?.detail?.code || `连接测试失败 (${res.status})`)
+    throw new Error(
+      err?.detail?.message || err?.detail?.code || `连接测试失败 (${res.status})`,
+    )
   }
 }
 
@@ -201,6 +209,11 @@ export async function uploadFile(
     providerProfileId?: string
     pages?: string
     outputDir?: string
+    processingMode?: "ocr" | "translation"
+    ocrProviderProfileId?: string
+    translationProviderProfileId?: string
+    targetLanguage?: string
+    translationMode?: string
   },
 ): Promise<UploadResult> {
   const form = new FormData()
@@ -214,6 +227,22 @@ export async function uploadFile(
   }
   if (opts?.outputDir?.trim()) {
     form.append("output_dir", opts.outputDir.trim())
+  }
+  // AI Processing 扩展字段：由前端依据设置推导，不写死 Provider ID。
+  if (opts?.processingMode) {
+    form.append("processing_mode", opts.processingMode)
+  }
+  if (opts?.ocrProviderProfileId) {
+    form.append("ocr_provider_profile_id", opts.ocrProviderProfileId)
+  }
+  if (opts?.translationProviderProfileId) {
+    form.append("translation_provider_profile_id", opts.translationProviderProfileId)
+  }
+  if (opts?.targetLanguage) {
+    form.append("target_language", opts.targetLanguage)
+  }
+  if (opts?.translationMode) {
+    form.append("translation_mode", opts.translationMode)
   }
 
   const res = await apiFetch("/tasks/upload-file", {

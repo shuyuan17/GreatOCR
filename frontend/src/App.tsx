@@ -301,6 +301,13 @@ function NewTaskPage() {
         providerProfileId: selectedProviderProfileId,
         pages: pdfSelected ? pageRange : "",
         outputDir,
+        // AI Processing 扩展字段：由设置中的默认 Provider 推导，不写死。
+        processingMode: aiMode,
+        ocrProviderProfileId: selectedProviderProfileId,
+        translationProviderProfileId:
+          aiMode === "translation" ? selectedTranslationProvider?.profileId : undefined,
+        targetLanguage: aiMode === "translation" ? targetLanguage : undefined,
+        translationMode: aiMode === "translation" ? translationMode : undefined,
       })
       setTask(uploaded.task)
       setProgressMsg("文件已上传，正在启动 OCR...")
@@ -1217,6 +1224,31 @@ function TaskCenterPage() {
                                   报告
                                 </span>
                               ) : null}
+                              {summary?.files.translated_docx.exists && summary.files.translated_docx.download_path ? (
+                                <a
+                                  href={summary.files.translated_docx.download_path}
+                                  style={{
+                                    fontSize: "0.85rem",
+                                    color: "#1565c0",
+                                    textDecoration: "underline",
+                                    padding: "0 4px",
+                                  }}
+                                  title="下载 translated_result.docx"
+                                >
+                                  译文
+                                </a>
+                              ) : summary?.files.translated_docx.exists ? (
+                                <span
+                                  style={{
+                                    fontSize: "0.8rem",
+                                    color: "#999",
+                                    padding: "0 4px",
+                                  }}
+                                  title="文件暂不可下载"
+                                >
+                                  译文
+                                </span>
+                              ) : null}
                             </div>
                           )}
                         </div>
@@ -1415,7 +1447,7 @@ function SettingsPage() {
       })
       // Refresh providers
       const updatedList = await listProviders()
-      setProviders(updatedList)
+      setProviders(updatedList.filter((p) => p.profile_id !== "fake-default"))
       showSaveMsg("Provider 设置已保存")
     } catch (err) {
       showSaveMsg(err instanceof Error ? err.message : "保存 Provider 失败", "error")
@@ -1764,6 +1796,26 @@ function SettingsPage() {
                         }))
                       }
                       placeholder={real?.endpoint || "输入 API 端点地址"}
+                      style={inputStyle}
+                    />
+                  </div>
+
+                  {/* Model */}
+                  <div style={formGroupStyle}>
+                    <label style={labelStyle}>Model</label>
+                    <input
+                      type="text"
+                      value={form?.model || ""}
+                      onChange={(e) =>
+                        setProviderForms((prev) => ({
+                          ...prev,
+                          [entry.profileId]: {
+                            ...prev[entry.profileId],
+                            model: e.target.value,
+                          },
+                        }))
+                      }
+                      placeholder={real?.model || "输入模型名称"}
                       style={inputStyle}
                     />
                   </div>

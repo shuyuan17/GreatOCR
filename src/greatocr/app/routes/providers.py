@@ -22,7 +22,7 @@ class ProviderProfileInput(BaseModel):
 
     profile_id: str
     display_name: str
-    adapter_type: Literal["mineru", "generic_vision", "fake"]
+    adapter_type: Literal["mineru", "generic_vision", "fake", "deepseek", "openai-compatible"]
     endpoint: str | None = None
     model: str | None = None
     public: bool = True
@@ -133,7 +133,10 @@ def test_connection(profile_id: str, request: Request) -> dict[str, str]:
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"code": "PROVIDER_CONNECTION_FAILED"},
+            detail={
+                "code": "PROVIDER_CONNECTION_FAILED",
+                "message": "Provider connection test failed.",
+            },
         ) from exc
     return {"status": "ok"}
 

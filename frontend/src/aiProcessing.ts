@@ -89,6 +89,14 @@ export const AI_PROVIDER_CATALOG: AiProviderCatalogEntry[] = [
     sensitiveAllowed: false,
     status: "active",
   },
+  {
+    id: "zhipu-glm",
+    profileId: "zhipu-glm-default",
+    displayName: "智谱 GLM",
+    capabilities: ["Translation", "Text Processing"],
+    sensitiveAllowed: true,
+    status: "active",
+  },
   // ---- Coming Soon（disabled 卡片，V2.4 起可用）----
   {
     id: "openai",

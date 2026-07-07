@@ -38,51 +38,52 @@ def test_credential_service_masks_and_deletes_secret(
     fake_keyring: FakeKeyring,
 ) -> None:
     service = CredentialService(fake_keyring, service_name="GreatOCR")
-    service.set("mineru-default", "abcdef123456")
+    service.set("zhipu-glm-default", "abcdef123456")
 
-    assert service.status("mineru-default").model_dump() == {
+    assert service.status("zhipu-glm-default").model_dump() == {
         "configured": True,
         "masked": "********3456",
     }
-    assert service.resolve("mineru-default").get_secret_value() == "abcdef123456"
+    assert service.resolve("zhipu-glm-default").get_secret_value() == "abcdef123456"
 
-    service.delete("mineru-default")
-    assert service.status("mineru-default").configured is False
+    service.delete("zhipu-glm-default")
+    assert service.status("zhipu-glm-default").configured is False
     with pytest.raises(CredentialNotConfigured):
-        service.resolve("mineru-default")
+        service.resolve("zhipu-glm-default")
 
 
 def test_credential_service_rejects_blank_secret(fake_keyring: FakeKeyring) -> None:
     service = CredentialService(fake_keyring)
 
     with pytest.raises(ValueError, match="cannot be empty"):
-        service.set("mineru-default", "   ")
+        service.set("zhipu-glm-default", "   ")
 
 
 def test_json_credential_backend_persists_secret(tmp_path: Path) -> None:
     storage_path = tmp_path / "user-config" / "credentials.json"
 
     first = CredentialService(JsonCredentialBackend(storage_path))
-    first.set("mineru-default", "persisted-secret-1234")
+    first.set("zhipu-glm-default", "persisted-secret-1234")
 
     second = CredentialService(JsonCredentialBackend(storage_path))
 
-    assert second.status("mineru-default").model_dump() == {
+    assert second.status("zhipu-glm-default").model_dump() == {
         "configured": True,
         "masked": "********1234",
     }
-    assert second.resolve("mineru-default").get_secret_value() == "persisted-secret-1234"
+    assert second.resolve("zhipu-glm-default").get_secret_value() == "persisted-secret-1234"
 
 
 @pytest.fixture
 def provider_payload() -> dict[str, object]:
     return {
-        "profile_id": "mineru-default",
-        "display_name": "MinerU",
-        "adapter_type": "mineru",
-        "endpoint": "https://mineru.net",
+        "profile_id": "zhipu-glm-default",
+        "display_name": "智谱 GLM",
+        "adapter_type": "openai-compatible",
+        "endpoint": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        "model": "glm-4-plus",
         "public": True,
-        "capabilities": {"tables": True, "images": True},
+        "capabilities": {"translation": True, "text_processing": True},
     }
 
 
@@ -142,7 +143,7 @@ def test_provider_connection_uses_resolved_secret_without_returning_it(
     received: list[str] = []
 
     def tester(profile: dict[str, object], secret) -> None:
-        assert profile["profile_id"] == "mineru-default"
+        assert profile["profile_id"] == "zhipu-glm-default"
         received.append(secret.get_secret_value())
 
     client, database = make_client(tmp_path, fake_keyring, tester=tester)
@@ -153,7 +154,7 @@ def test_provider_connection_uses_resolved_secret_without_returning_it(
             headers=auth_headers(**{"X-GreatOCR-Provider-Key": "connection-secret"}),
         )
         response = client.post(
-            "/api/providers/mineru-default/test-connection",
+            "/api/providers/zhipu-glm-default/test-connection",
             headers=auth_headers(),
         )
 
@@ -181,12 +182,13 @@ def test_provider_connection_failure_returns_fixed_error_code(
             headers=auth_headers(**{"X-GreatOCR-Provider-Key": "connection-secret"}),
         )
         response = client.post(
-            "/api/providers/mineru-default/test-connection",
+            "/api/providers/zhipu-glm-default/test-connection",
             headers=auth_headers(),
         )
 
         assert response.status_code == 502
         assert response.json()["detail"]["code"] == "PROVIDER_CONNECTION_FAILED"
+        assert response.json()["detail"]["message"] == "Provider connection test failed."
         assert "connection-secret" not in response.text
         assert "provider leaked" not in response.text
     finally:
@@ -206,18 +208,18 @@ def test_provider_capability_test_and_delete(
             headers=auth_headers(**{"X-GreatOCR-Provider-Key": "temporary-secret"}),
         )
         capabilities = client.post(
-            "/api/providers/mineru-default/test-capabilities",
+            "/api/providers/zhipu-glm-default/test-capabilities",
             headers=auth_headers(),
         )
         deleted = client.delete(
-            "/api/providers/mineru-default",
+            "/api/providers/zhipu-glm-default",
             headers=auth_headers(),
         )
 
         assert capabilities.status_code == 200
         assert capabilities.json()["capabilities"] == {
-            "tables": True,
-            "images": True,
+            "translation": True,
+            "text_processing": True,
         }
         assert deleted.status_code == 204
         assert fake_keyring.values == {}
@@ -239,12 +241,16 @@ def test_provider_delete_is_blocked_while_running_task_uses_it(
             headers=auth_headers(),
         )
         task = database.create_task(
-            NewTask(source_path="C:/docs/sample.pdf", pages=[1])
+            NewTask(
+                source_path="C:/docs/sample.pdf",
+                pages=[1],
+                provider_profile_id="zhipu-glm-default",
+            )
         )
         database.update_task_status(task.task_id, "running")
 
         response = client.delete(
-            "/api/providers/mineru-default",
+            "/api/providers/zhipu-glm-default",
             headers=auth_headers(),
         )
 

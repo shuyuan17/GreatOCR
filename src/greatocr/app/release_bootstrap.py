@@ -74,6 +74,23 @@ def ensure_release_defaults(database: TaskDatabase, *, data_dir: Path) -> None:
             }
         )
 
+    if database.get_provider("zhipu-glm-default") is None:
+        database.save_provider(
+            {
+                "profile_id": "zhipu-glm-default",
+                "display_name": "智谱 GLM",
+                "adapter_type": "openai-compatible",
+                "endpoint": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                "model": "glm-4-plus",
+                "public": True,
+                "capabilities": {
+                    "translation": True,
+                    "text_processing": True,
+                },
+                "approved_fallback_ids": [],
+            }
+        )
+
     existing_prefs = database.get_preferences()
     prefs = {
         **DEFAULT_PREFERENCES,

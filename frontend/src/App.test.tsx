@@ -28,10 +28,12 @@ function makeResultSummary(
     task?: Record<string, unknown>
     resultExists?: boolean
     qualityExists?: boolean
+    translatedExists?: boolean
   } = {},
 ) {
   const resultExists = overrides.resultExists ?? true
   const qualityExists = overrides.qualityExists ?? true
+  const translatedExists = overrides.translatedExists ?? false
   const task = makeTask(overrides.task ?? {})
 
   return {
@@ -53,6 +55,14 @@ function makeResultSummary(
           ? `/api/tasks/${task.task_id}/download/quality-report.docx`
           : null,
       },
+      translated_docx: {
+        key: "translated_docx",
+        filename: "translated_result.docx",
+        exists: translatedExists,
+        download_path: translatedExists
+          ? `/api/tasks/${task.task_id}/download/translated_result.docx`
+          : null,
+      },
     },
   }
 }
@@ -68,6 +78,17 @@ const providerList = [
     capabilities: {},
     approved_fallback_ids: [],
     credential: { configured: true, masked: "********1234" },
+  },
+  {
+    profile_id: "zhipu-glm-default",
+    display_name: "智谱 GLM",
+    adapter_type: "openai-compatible",
+    endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    model: "glm-4-plus",
+    public: true,
+    capabilities: { translation: true, text_processing: true },
+    approved_fallback_ids: [],
+    credential: { configured: true, masked: "********5678" },
   },
   {
     // 仅用于离线测试，UI 不应展示（fake-default）。
@@ -319,6 +340,7 @@ describe("Settings page - AI Provider 库 & 默认工作流配置", () => {
     // MinerU 具备 OCR 能力；DeepSeek / coming soon 的 Provider 不应出现。
     expect(optionTexts).toEqual(["MinerU"])
     expect(optionTexts).not.toContain("DeepSeek")
+    expect(optionTexts).not.toContain("智谱 GLM")
     expect(optionTexts).not.toContain("Azure Document Intelligence")
   })
 
@@ -337,7 +359,7 @@ describe("Settings page - AI Provider 库 & 默认工作流配置", () => {
     )) as HTMLSelectElement
     const optionTexts = Array.from(select.options).map((o) => o.textContent)
     // DeepSeek 具备 Translation 能力；MinerU / coming soon 的 Provider 不应出现。
-    expect(optionTexts).toEqual(["DeepSeek"])
+    expect(optionTexts).toEqual(["DeepSeek", "智谱 GLM"])
     expect(optionTexts).not.toContain("MinerU")
   })
 
@@ -469,6 +491,21 @@ describe("New Task page - AI Processing workflow", () => {
     expect(await screen.findByText(/DeepSeek/)).toBeInTheDocument()
     // 切换到 OCR + Translation 后，不应再显示 未启用
     expect(screen.queryByText(/未启用/)).not.toBeInTheDocument()
+  })
+
+  it("reflects a saved 智谱 GLM translation provider in Current Workflow", async () => {
+    localStorage.setItem(
+      "greatocr.workflowConfig",
+      JSON.stringify({
+        ocrProviderId: "mineru",
+        translationProviderId: "zhipu-glm",
+      }),
+    )
+    renderNewTask()
+    const mode = screen.getByLabelText("Processing Mode") as HTMLSelectElement
+    fireEvent.change(mode, { target: { value: "translation" } })
+
+    expect(await screen.findByText(/Translation Provider：智谱 GLM/)).toBeInTheDocument()
   })
 
   it("shows warning and disables submit when sensitive file = 是 with disallowed providers", async () => {
@@ -628,6 +665,11 @@ describe("Settings page - AI Provider Library & Default Workflow", () => {
   it("shows the DeepSeek provider", async () => {
     renderSettings()
     expect((await screen.findAllByText("DeepSeek")).length).toBeGreaterThan(0)
+  })
+
+  it("shows the 智谱 GLM provider", async () => {
+    renderSettings()
+    expect((await screen.findAllByText("智谱 GLM")).length).toBeGreaterThan(0)
   })
 
   it("does not show the Fake Provider", async () => {
