@@ -102,6 +102,7 @@ class TaskResultSummary(BaseModel):
 
     task: TaskRecord
     files: dict[str, TaskResultFileEntry]
+    error_message: str | None = None
 
 
 class DefaultOutputDirResponse(BaseModel):

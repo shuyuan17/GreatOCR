@@ -10,6 +10,7 @@ from greatocr.app.db import TaskDatabase
 from greatocr.app.schemas import NewTask
 from greatocr.app.services.credentials import CredentialService
 from greatocr.app.services.task_processor import TaskProcessor
+from greatocr.task.manifest import load_manifest
 from tests.app.test_credentials import FakeKeyring
 
 
@@ -192,7 +193,7 @@ def test_translation_failure_keeps_result_docx_and_returns_partial_without_fake_
 ) -> None:
     class ExplodingTranslator:
         def translate_texts(self, texts: list[str]) -> list[str]:
-            raise RuntimeError("provider model rejected the request")
+            raise RuntimeError("Client error '401 Unauthorized' for url 'https://example.test'")
 
     def translator_factory(**kwargs):
         return ExplodingTranslator()
@@ -219,8 +220,14 @@ def test_translation_failure_keeps_result_docx_and_returns_partial_without_fake_
         status = processor.process(task)
 
         task_dir = Path(task.output_dir)
+        manifest = load_manifest(task_dir / "intermediates" / "task-manifest.json")
         assert status == "partial"
         assert (task_dir / "result.docx").is_file()
         assert not (task_dir / "translated_result.docx").exists()
+        assert manifest.stages["translation"].status == "failed"
+        assert (
+            manifest.stages["translation"].message
+            == "Translation Provider authentication failed. Please check API Key configuration."
+        )
     finally:
         database.close()

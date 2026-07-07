@@ -18,6 +18,7 @@ from greatocr.app.schemas import (
 from greatocr.app.services.task_service import TaskService, TaskServiceError
 from greatocr.ingest.preflight import InvalidPdfError, run_preflight
 from greatocr.selection.page_ranges import PageRangeError, parse_page_ranges
+from greatocr.task.manifest import load_manifest
 
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -102,6 +103,25 @@ def _run(action):
                 "message": ERROR_MESSAGES.get(exc.code, exc.code),
             },
         ) from exc
+
+
+def _task_error_message(output_dir: Path) -> str | None:
+    manifest_path = output_dir / "intermediates" / "task-manifest.json"
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = load_manifest(manifest_path)
+    except Exception:
+        return None
+
+    translation_stage = manifest.stages.get("translation")
+    if translation_stage is not None and translation_stage.message:
+        return translation_stage.message
+
+    pipeline_stage = manifest.stages.get("pipeline")
+    if pipeline_stage is not None and pipeline_stage.message:
+        return pipeline_stage.message
+    return None
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -227,7 +247,11 @@ def task_result_files(task_id: str, request: Request) -> TaskResultSummary:
         )
         for key, filename in RESULT_FILES.items()
     }
-    return TaskResultSummary(task=task, files=files)
+    return TaskResultSummary(
+        task=task,
+        files=files,
+        error_message=_task_error_message(output_dir),
+    )
 
 
 @router.get("/{task_id}/download/{filename}")

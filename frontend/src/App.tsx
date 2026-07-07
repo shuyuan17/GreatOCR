@@ -229,6 +229,7 @@ function NewTaskPage() {
   const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
+  const [providers, setProviders] = useState<ProviderView[]>([])
   // 默认工作流配置（来自 Settings 的 localStorage；不取后端列表第一个 Provider）。
   const [workflowConfig] = useState<WorkflowConfig>(() => loadWorkflowConfig())
   const [pageRange, setPageRange] = useState("")
@@ -254,7 +255,27 @@ function NewTaskPage() {
     getDefaultOutputDir()
       .then((result) => setOutputDir(result.output_dir))
       .catch(() => {})
+    listProviders()
+      .then((result) => setProviders(result.filter((provider) => provider.profile_id !== "fake-default")))
+      .catch(() => {})
   }, [])
+
+  const resolveProviderEntry = useCallback(
+    (id: string | undefined): AiProviderCatalogEntry | undefined => {
+      if (!id) return undefined
+      const entry = getProviderById(id)
+      if (!entry) return undefined
+      const runtime = providers.find((provider) => provider.profile_id === entry.profileId)
+      if (!runtime || runtime.sensitive_allowed === undefined) {
+        return entry
+      }
+      return {
+        ...entry,
+        sensitiveAllowed: runtime.sensitive_allowed,
+      }
+    },
+    [providers],
+  )
 
   const pollTask = useCallback(async (taskId: string) => {
     const maxAttempts = 120
@@ -333,8 +354,8 @@ function NewTaskPage() {
     AI_PROCESSING_MODES[0]
 
   // 默认 OCR Provider 对应的 catalog 条目（来自 Settings 保存的工作流配置）。
-  const selectedOcrProvider = getProviderById(workflowConfig.ocrProviderId)
-  const selectedTranslationProvider = getProviderById(
+  const selectedOcrProvider = resolveProviderEntry(workflowConfig.ocrProviderId)
+  const selectedTranslationProvider = resolveProviderEntry(
     workflowConfig.translationProviderId,
   )
   // 上传时使用的 provider_profile_id 由 catalog 推导，不写死、不取后端列表第一个。
@@ -1057,6 +1078,11 @@ function TaskCenterPage() {
                   const summary = resultSummaries[task.task_id]
                   const isResultLoading = !!resultLoading[task.task_id]
                   const isTerminal = TERMINAL_STATUSES.includes(task.status)
+                  const taskErrorMessage =
+                    (task.status === "partial" || task.status === "failed") &&
+                    summary?.error_message
+                      ? summary.error_message
+                      : null
 
                   return (
                     <tr
@@ -1088,19 +1114,34 @@ function TaskCenterPage() {
 
                       {/* 状态 */}
                       <td style={tdStyle}>
-                        <span
-                          style={{
-                            fontSize: "0.8rem",
-                            padding: "2px 8px",
-                            borderRadius: 10,
-                            background: `${STATUS_COLORS[task.status]}18`,
-                            color: STATUS_COLORS[task.status],
-                            border: `1px solid ${STATUS_COLORS[task.status]}40`,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {STATUS_LABELS[task.status]}
-                        </span>
+                        <div>
+                          <span
+                            style={{
+                              fontSize: "0.8rem",
+                              padding: "2px 8px",
+                              borderRadius: 10,
+                              background: `${STATUS_COLORS[task.status]}18`,
+                              color: STATUS_COLORS[task.status],
+                              border: `1px solid ${STATUS_COLORS[task.status]}40`,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {STATUS_LABELS[task.status]}
+                          </span>
+                          {taskErrorMessage && (
+                            <div
+                              style={{
+                                marginTop: 6,
+                                fontSize: "0.78rem",
+                                lineHeight: 1.4,
+                                color: "#666",
+                                minWidth: 220,
+                              }}
+                            >
+                              {taskErrorMessage}
+                            </div>
+                          )}
+                        </div>
                       </td>
 
                       {/* 创建时间 */}
@@ -1561,10 +1602,14 @@ function SettingsPage() {
   }
 
   // 依据前端目录渲染 Provider 卡片；real 为后端真实数据（用于配置状态）。
-  const displayProviders = AI_PROVIDER_CATALOG.map((entry) => ({
-    ...entry,
-    real: providers.find((p) => p.profile_id === entry.profileId),
-  }))
+  const displayProviders = AI_PROVIDER_CATALOG.map((entry) => {
+      const real = providers.find((p) => p.profile_id === entry.profileId)
+      return {
+        ...entry,
+        real,
+        effectiveSensitiveAllowed: real?.sensitive_allowed ?? entry.sensitiveAllowed,
+      }
+    })
 
   return (
     <div style={{ padding: "2rem", maxWidth: 800, margin: "0 auto" }}>
@@ -1659,10 +1704,10 @@ function SettingsPage() {
                       <span
                         style={{
                           fontSize: "0.8rem",
-                          color: entry.sensitiveAllowed ? "#2e7d32" : "#888",
-                        }}
-                      >
-                        {entry.sensitiveAllowed ? "Allowed" : "Not Allowed"}
+                            color: entry.effectiveSensitiveAllowed ? "#2e7d32" : "#888",
+                          }}
+                        >
+                        {entry.effectiveSensitiveAllowed ? "Allowed" : "Not Allowed"}
                       </span>
                     </div>
                   </div>
@@ -1727,10 +1772,10 @@ function SettingsPage() {
                     <span
                       style={{
                         fontSize: "0.8rem",
-                        color: entry.sensitiveAllowed ? "#2e7d32" : "#c62828",
-                      }}
-                    >
-                      {entry.sensitiveAllowed ? "Allowed" : "Not Allowed"}
+                         color: entry.effectiveSensitiveAllowed ? "#2e7d32" : "#c62828",
+                        }}
+                      >
+                       {entry.effectiveSensitiveAllowed ? "Allowed" : "Not Allowed"}
                     </span>
                   </div>
 

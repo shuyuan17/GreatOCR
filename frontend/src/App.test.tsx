@@ -18,6 +18,12 @@ function makeTask(overrides: Record<string, unknown> = {}) {
     output_dir: "C:/output/task-1",
     quality_rating: "high",
     requested_action: null,
+    completed_at: "2026-07-04T12:30:00+00:00",
+    processing_mode: "ocr",
+    ocr_provider_profile_id: "mineru-default",
+    translation_provider_profile_id: null,
+    target_language: null,
+    translation_mode: null,
     created_at: "2026-07-04T12:00:00+00:00",
     ...overrides,
   }
@@ -29,6 +35,7 @@ function makeResultSummary(
     resultExists?: boolean
     qualityExists?: boolean
     translatedExists?: boolean
+    errorMessage?: string | null
   } = {},
 ) {
   const resultExists = overrides.resultExists ?? true
@@ -38,6 +45,7 @@ function makeResultSummary(
 
   return {
     task,
+    error_message: overrides.errorMessage ?? null,
     files: {
       result_docx: {
         key: "result_docx",
@@ -217,6 +225,59 @@ describe("GreatOCR application shell", () => {
     expect(await screen.findByText("结果")).toBeInTheDocument()
     // 质量报告因为不存在，不应有"报告"链接
     expect(screen.queryByText("报告")).not.toBeInTheDocument()
+  })
+
+  it("shows a safe translation failure reason for partial tasks", async () => {
+    apiModule.listTasks.mockResolvedValue([
+      makeTask({ task_id: "task-3", status: "partial" }),
+    ])
+    apiModule.getTaskResultFiles.mockResolvedValue(
+      makeResultSummary({
+        task: { task_id: "task-3", status: "partial" },
+        resultExists: true,
+        translatedExists: false,
+        errorMessage:
+          "Translation Provider authentication failed. Please check API Key configuration.",
+      }),
+    )
+
+    render(
+      <MemoryRouter initialEntries={["/tasks?task=task-3"]}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(
+      await screen.findByText(
+        "Translation Provider authentication failed. Please check API Key configuration.",
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it("does not show an error reason for succeeded tasks", async () => {
+    apiModule.listTasks.mockResolvedValue([
+      makeTask({ task_id: "task-4", status: "succeeded" }),
+    ])
+    apiModule.getTaskResultFiles.mockResolvedValue(
+      makeResultSummary({
+        task: { task_id: "task-4", status: "succeeded" },
+        errorMessage:
+          "Translation Provider authentication failed. Please check API Key configuration.",
+      }),
+    )
+
+    render(
+      <MemoryRouter initialEntries={["/tasks?task=task-4"]}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    await screen.findByText("结果")
+    expect(
+      screen.queryByText(
+        "Translation Provider authentication failed. Please check API Key configuration.",
+      ),
+    ).not.toBeInTheDocument()
   })
 
   it("loads the default output path on the new task page", async () => {

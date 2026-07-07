@@ -14,6 +14,7 @@ from greatocr.providers.mineru import MinerUConfig, MinerUDocumentParser
 from greatocr.providers.profiles import ProviderProfile
 from greatocr.providers.registry import ProviderRegistry
 from greatocr.security import DataFlowSummary, RetentionPolicy, SecurityMode
+from greatocr.task.checkpoints import load_or_create_manifest, mark_stage
 from greatocr.translation import (
     ChatCompletionsTranslator,
     TranslationError,
@@ -119,25 +120,41 @@ class TaskProcessor:
 
         translated_path = task_dir / "translated_result.docx"
         translated_path.unlink(missing_ok=True)
-        translator = self.translator_factory(
-            api_key=self.credentials.resolve(translation_provider_id).get_secret_value(),
-            endpoint=translation_profile.get("endpoint"),
-            model_name=translation_profile.get("model"),
-            target_language=_normalize_target_language(task.target_language),
-            provider_name=translation_profile.get("display_name") or "翻译 Provider",
-        )
+        manifest = load_or_create_manifest(task_dir, preflight.file_sha256, {})
+        manifest = mark_stage(task_dir, manifest, "translation", "running")
 
         try:
+            translator = self.translator_factory(
+                api_key=self.credentials.resolve(translation_provider_id).get_secret_value(),
+                endpoint=translation_profile.get("endpoint"),
+                model_name=translation_profile.get("model"),
+                target_language=_normalize_target_language(task.target_language),
+                provider_name=translation_profile.get("display_name") or "翻译 Provider",
+            )
             translated_document = translate_document(document, translator)
             build_docx(translated_document, translated_path, task_dir=task_dir)
         except (TranslationError, Exception) as exc:
             translated_path.unlink(missing_ok=True)
             provider_name = translation_profile.get("display_name") or translation_provider_id
+            mark_stage(
+                task_dir,
+                manifest,
+                "translation",
+                "failed",
+                message=_safe_translation_error_message(exc),
+            )
             self.logger(
                 f"[worker] Task {task.task_id} translation failed via {provider_name}: {exc}"
             )
             return "partial"
 
+        mark_stage(
+            task_dir,
+            manifest,
+            "translation",
+            "succeeded",
+            outputs={"translated_result": "translated_result.docx"},
+        )
         self.logger(f"[worker] Task {task.task_id} translated -> {translated_path}")
         return "succeeded"
 
@@ -160,3 +177,21 @@ class TaskProcessor:
         if task.source_path is None:
             raise RuntimeError("source path not available")
         return Path(task.source_path)
+
+
+def _safe_translation_error_message(exc: Exception) -> str:
+    message = str(exc).lower()
+    if any(
+        token in message
+        for token in ("401", "403", "unauthorized", "forbidden", "api key", "authentication")
+    ):
+        return "Translation Provider authentication failed. Please check API Key configuration."
+    if "model" in message and any(
+        token in message for token in ("unavailable", "not found", "does not exist", "invalid")
+    ):
+        return "Translation Provider model unavailable. Please check model configuration."
+    if any(token in message for token in ("connect", "connection", "timeout", "network", "dns")):
+        return "Translation Provider connection failed. Please check Provider network configuration."
+    if "404" in message:
+        return "Translation Provider model unavailable. Please check model configuration."
+    return "Translation failed. Please check Provider configuration and try again."

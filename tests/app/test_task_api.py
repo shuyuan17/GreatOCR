@@ -198,6 +198,68 @@ def test_task_result_summary_reports_available_files(api) -> None:
     )
     assert payload["files"]["quality_report_docx"]["exists"] is False
     assert payload["files"]["quality_report_docx"]["download_path"] is None
+    assert payload["error_message"] is None
+
+
+def test_task_result_summary_keeps_internal_versions_hidden(api) -> None:
+    client, database, _, tmp_path = api
+    task = create_task(client, make_pdf(tmp_path / "hidden-version.pdf"), sensitive=False)
+    output_dir = Path(database.get_task(task["task_id"]).output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "result.docx").write_bytes(b"docx")
+    (output_dir / "result-v1.docx").write_bytes(b"versioned")
+
+    response = client.get(
+        f"/api/tasks/{task['task_id']}/result-files",
+        headers=headers(),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert sorted(payload["files"].keys()) == [
+        "quality_report_docx",
+        "result_docx",
+        "translated_docx",
+    ]
+    assert "result-v1.docx" not in response.text
+
+
+def test_task_result_summary_exposes_safe_translation_error_from_manifest(api) -> None:
+    client, database, _, tmp_path = api
+    task = create_task(client, make_pdf(tmp_path / "translation-error.pdf"), sensitive=False)
+    output_dir = Path(database.get_task(task["task_id"]).output_dir)
+    intermediates = output_dir / "intermediates"
+    intermediates.mkdir(parents=True, exist_ok=True)
+    (intermediates / "task-manifest.json").write_text(
+        """
+        {
+          "source_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "config": {},
+          "stages": {
+            "translation": {
+              "status": "failed",
+              "updated_at": "2026-07-07T10:00:00+00:00",
+              "message": "Translation Provider authentication failed. Please check API Key configuration."
+            }
+          },
+          "outputs": {},
+          "approved_profile_ids": [],
+          "security_confirmation_at": null
+        }
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    response = client.get(
+        f"/api/tasks/{task['task_id']}/result-files",
+        headers=headers(),
+    )
+
+    assert response.status_code == 200
+    assert (
+        response.json()["error_message"]
+        == "Translation Provider authentication failed. Please check API Key configuration."
+    )
 
 
 def test_task_result_download_returns_standard_file(api) -> None:

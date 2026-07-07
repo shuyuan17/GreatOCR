@@ -1,15 +1,4 @@
-"""GreatOCR V2.3 local web application launcher.
-
-Usage:
-  .venv/Scripts/python.exe scripts/serve.py
-
-Starts FastAPI backend at http://127.0.0.1:8399 by default.
-
-On first run it auto-creates:
-  1. SQLite database (data/greatocr.db)
-  2. mineru-default provider
-  3. Default user preferences
-"""
+"""GreatOCR local web application launcher."""
 
 from __future__ import annotations
 
@@ -27,6 +16,7 @@ from greatocr.app.main import create_app
 from greatocr.app.release_bootstrap import ensure_release_defaults, get_user_data_dir
 from greatocr.app.services.credentials import CredentialService, JsonCredentialBackend
 from greatocr.app.services.provider_connections import probe_provider_connection
+from greatocr.app.services.task_processor import TaskProcessor
 from greatocr.app.services.task_service import TaskService
 from greatocr.app.services.thumbnails import ThumbnailService
 
@@ -42,20 +32,6 @@ ALLOWED_ORIGIN = os.environ.get("GREATOCR_ALLOWED_ORIGIN", "http://localhost:517
 BIND_HOST = "127.0.0.1"
 BIND_PORT = 8399
 
-
-# MVP：目标语言目前仅支持中文。将前端可能传入的 "Chinese" / "zh" 等归一化为中文文案。
-_CHINESE_ALIASES = {"中文", "chinese", "zh", "cn", "zho"}
-_DEFAULT_TARGET_LANGUAGE = "中文"
-
-
-def _normalize_target_language(value: str | None) -> str:
-    if not value:
-        return _DEFAULT_TARGET_LANGUAGE
-    if value.strip().lower() in _CHINESE_ALIASES:
-        return _DEFAULT_TARGET_LANGUAGE
-    # MVP 仅支持中文；其它值回退为中文，避免把原文语言名拼进提示词。
-    return _DEFAULT_TARGET_LANGUAGE
-
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
@@ -64,8 +40,6 @@ database = TaskDatabase(DB_PATH)
 
 
 class _SystemKeyringBackend:
-    """Wrap the system keyring to match the CredentialService protocol."""
-
     def __init__(self) -> None:
         import keyring as _kr
 
@@ -125,23 +99,14 @@ def _run_background_worker() -> None:
     import time
 
     from greatocr.app.services.worker import SerialWorker
-    from greatocr.docx.builder import build_docx
-    from greatocr.ingest.preflight import InvalidPdfError, run_preflight
-    from greatocr.pipeline import run_pipeline
-    from greatocr.providers.mineru import MinerUConfig, MinerUDocumentParser
-    from greatocr.providers.profiles import ProviderProfile
-    from greatocr.providers.registry import ProviderRegistry
-    from greatocr.security import DataFlowSummary, RetentionPolicy, SecurityMode
-    from greatocr.translation import (
-        DeepSeekTranslator,
-        TranslationError,
-        translate_document,
-    )
-
-    def _secret_resolver(profile_id: str) -> str:
-        return credentials.resolve(profile_id).get_secret_value()
 
     worker = SerialWorker(database)
+    processor = TaskProcessor(
+        database,
+        credentials,
+        source_path_resolver=task_service.source_path,
+        logger=print,
+    )
 
     while True:
         time.sleep(2)
@@ -151,86 +116,9 @@ def _run_background_worker() -> None:
 
         print(f"[worker] Starting task {task.task_id}")
         try:
-            # OCR provider：优先使用 ocr_provider_profile_id，向后兼容 provider_profile_id。
-            ocr_provider_id = task.ocr_provider_profile_id or task.provider_profile_id
-            ocr_profile_dict = database.get_provider(ocr_provider_id)
-            if ocr_profile_dict is None:
-                raise RuntimeError(f"OCR provider {ocr_provider_id} 未找到")
-            profile = ProviderProfile(**ocr_profile_dict)
-
-            if profile.adapter_type == "mineru":
-                secret = _secret_resolver(ocr_provider_id)
-                config = MinerUConfig(base_url=profile.endpoint, api_key=secret)
-                parser = MinerUDocumentParser(config, upload_confirmed=True)
-            else:
-                registry = ProviderRegistry([profile])
-                parser = registry.create_parser(ocr_provider_id, _secret_resolver)
-
-            if task.source_path is None:
-                raise RuntimeError("source path not available")
-            source_path = Path(task.source_path)
-            preflight = run_preflight(source_path)
-
-            security_summary = DataFlowSummary(
-                security_mode=(
-                    SecurityMode.SENSITIVE if task.sensitive else SecurityMode.NORMAL
-                ),
-                source_file_name=source_path.name,
-                page_count=preflight.page_count,
-                provider_name=profile.display_name,
-                provider_endpoint=profile.endpoint or None,
-                provider_public=bool(profile.public),
-                external_upload_allowed=True,
-                requires_confirmation=False,
-                retention_policy=RetentionPolicy(
-                    keep_intermediates=False,
-                    keep_page_cache=False,
-                ),
-            )
-
-            task_dir = Path(task.output_dir)
-            task_dir.mkdir(parents=True, exist_ok=True)
-            document = run_pipeline(
-                task_dir=task_dir,
-                preflight=preflight,
-                parser=parser,
-                security_summary=security_summary,
-                selected_pages=task.selected_pages or None,
-            )
-
-            # OCR + 翻译：OCR 完成后再做逐页翻译，生成 translated_result.docx。
-            if task.processing_mode == "translation":
-                translation_provider_id = task.translation_provider_profile_id
-                if not translation_provider_id:
-                    raise RuntimeError("翻译模式缺少 translation_provider_profile_id")
-                translation_profile = database.get_provider(translation_provider_id)
-                if translation_profile is None:
-                    raise RuntimeError(f"翻译 provider {translation_provider_id} 未找到")
-                # 敏感文件 fail-safe：不允许发送给公开翻译服务。
-                if task.sensitive and translation_profile["public"]:
-                    raise RuntimeError("敏感文件不允许发送给公开翻译服务")
-                translation_secret = _secret_resolver(translation_provider_id)
-                if not translation_secret:
-                    raise RuntimeError("DeepSeek API key 未配置，无法执行翻译")
-                translator = DeepSeekTranslator(
-                    translation_secret,
-                    endpoint=translation_profile.get("endpoint"),
-                    model_name=translation_profile.get("model"),
-                    target_language=_normalize_target_language(task.target_language),
-                )
-                try:
-                    translated_document = translate_document(document, translator)
-                except TranslationError as exc:
-                    raise RuntimeError(f"翻译失败：{exc}") from exc
-                translated_path = task_dir / "translated_result.docx"
-                build_docx(translated_document, translated_path, task_dir=task_dir)
-                print(f"[worker] Task {task.task_id} translated -> {translated_path}")
-
-            worker.finish(task.task_id, "succeeded")
-            print(f"[worker] Task {task.task_id} finished")
-        except InvalidPdfError as exc:
-            print(f"[worker] Task {task.task_id} failed preflight: {exc}")
-            worker.finish(task.task_id, "failed")
+            status = processor.process(task)
+            worker.finish(task.task_id, status)
+            print(f"[worker] Task {task.task_id} finished with status {status}")
         except Exception as exc:
             print(f"[worker] Task {task.task_id} failed: {exc}")
             worker.finish(task.task_id, "failed")

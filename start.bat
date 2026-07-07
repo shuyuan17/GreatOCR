@@ -35,12 +35,8 @@ echo     Session prepared
 echo.
 
 echo [3/4] Checking Node.js ...
-set "NODE_EXE="
-for /f "delims=" %%I in ('where node 2^>nul') do (
-    if not defined NODE_EXE set "NODE_EXE=%%I"
-)
-
-if not defined NODE_EXE (
+call :resolve_node
+if errorlevel 1 (
     echo [ERROR] Node.js not found.
     echo Please install Node.js LTS and make sure it is added to PATH.
     pause
@@ -73,4 +69,23 @@ echo GreatOCR is starting.
 echo Close the Backend and Frontend windows to stop GreatOCR.
 echo.
 pause
+exit /b 0
+
+:resolve_node
+set "NODE_EXE="
+set "NPM_CLI="
+
+for /f "delims=" %%I in ('where node 2^>nul') do (
+    if not defined NODE_EXE set "NODE_EXE=%%I"
+)
+
+if not defined NODE_EXE if exist "C:\Program Files\nodejs\node.exe" set "NODE_EXE=C:\Program Files\nodejs\node.exe"
+if not defined NODE_EXE if exist "C:\Program Files (x86)\nodejs\node.exe" set "NODE_EXE=C:\Program Files (x86)\nodejs\node.exe"
+if not defined NODE_EXE if exist "%LOCALAPPDATA%\Programs\nodejs\node.exe" set "NODE_EXE=%LOCALAPPDATA%\Programs\nodejs\node.exe"
+
+if not defined NODE_EXE exit /b 1
+
+for %%I in ("%NODE_EXE%") do set "NODE_DIR=%%~dpI"
+set "PATH=%NODE_DIR%;%PATH%"
+set "NPM_CLI=%NODE_DIR%node_modules\npm\bin\npm-cli.js"
 exit /b 0

@@ -171,3 +171,26 @@ def test_header_and_footer_use_word_parts(tmp_path: Path) -> None:
     assert any("Company Header" in p.text for p in reopened.sections[0].header.paragraphs)
     assert any("Page Footer" in p.text for p in reopened.sections[0].footer.paragraphs)
     assert [p.text for p in reopened.paragraphs] == ["Body text"]
+
+
+def test_docx_settings_default_to_print_view(tmp_path: Path) -> None:
+    document = make_document(
+        [
+            Page(
+                page_id="page-0001",
+                page_number=1,
+                width=612,
+                height=792,
+                rotation=0,
+                page_type="native_text",
+                blocks=[text_block("paragraph", 1, "Body text")],
+            )
+        ]
+    )
+
+    result = build_docx(document, tmp_path / "view.docx")
+
+    with ZipFile(result.output_path) as package:
+        settings_xml = package.read("word/settings.xml").decode("utf-8")
+
+    assert '<w:view w:val="print"/>' in settings_xml

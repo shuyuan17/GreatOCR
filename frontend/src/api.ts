@@ -67,6 +67,7 @@ export interface TaskResultFileEntry {
 
 export interface TaskResultSummary {
   task: TaskRecord
+  error_message: string | null
   files: {
     result_docx: TaskResultFileEntry
     quality_report_docx: TaskResultFileEntry
@@ -133,6 +134,7 @@ export interface ProviderView {
   endpoint: string | null
   model: string | null
   public: boolean
+  sensitive_allowed?: boolean
   capabilities: Record<string, unknown>
   approved_fallback_ids: string[]
   credential: {

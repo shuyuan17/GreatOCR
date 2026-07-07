@@ -4,6 +4,8 @@ from pathlib import Path
 
 from docx import Document as WordDocument
 from docx.enum.section import WD_ORIENT, WD_SECTION
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Pt
 from pydantic import BaseModel, ConfigDict
 
@@ -28,6 +30,7 @@ def build_docx(
 ) -> DocxBuildResult:
     word = WordDocument()
     configure_base_styles(word)
+    _configure_document_view(word)
     issues: list[Issue] = []
 
     for page_index, page in enumerate(sorted(document.pages, key=lambda item: item.page_number)):
@@ -115,3 +118,14 @@ def _add_block(
     elif block.block_type == "image" and block.asset:
         return add_image_asset(word, block.asset, page_number, task_dir=task_dir)
     return []
+
+
+def _configure_document_view(word) -> None:
+    settings = word.settings._element
+    view = settings.find(qn("w:view"))
+    if view is None:
+        view = OxmlElement("w:view")
+        zoom = settings.find(qn("w:zoom"))
+        index = settings.index(zoom) if zoom is not None else 0
+        settings.insert(index, view)
+    view.set(qn("w:val"), "print")
