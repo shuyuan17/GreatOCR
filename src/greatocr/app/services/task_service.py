@@ -136,29 +136,13 @@ class TaskService:
 
         # 敏感文件安全校验：任何被使用的公开 provider 都需用户确认。
         if task.sensitive:
-            public_providers = [
+            blocked_providers = [
                 provider["profile_id"]
                 for provider in (ocr_provider, translation_provider)
-                if provider is not None and provider["public"]
+                if provider is not None and not bool(provider.get("sensitive_allowed", False))
             ]
-            if public_providers:
-                source_name = self._source_path(task_id).name
-                expected = {
-                    "confirmed": True,
-                    "provider_profile_id": ocr_provider_id,
-                    "source_file_name": source_name,
-                }
-                if not isinstance(confirmation, dict) or confirmation.get("confirmed") is not True:
-                    raise TaskServiceError("SENSITIVE_CONFIRMATION_REQUIRED")
-                if confirmation.get("source_file_name") != source_name:
-                    raise TaskServiceError("SENSITIVE_CONFIRMATION_REQUIRED")
-                self._write_approval(
-                    task,
-                    {
-                        **expected,
-                        "translation_provider_profile_id": task.translation_provider_profile_id,
-                    },
-                )
+            if blocked_providers:
+                raise TaskServiceError("SENSITIVE_PROVIDER_NOT_ALLOWED")
 
         self.database.update_task_status(task_id, "pending")
         return self.get(task_id)
@@ -223,6 +207,9 @@ class TaskService:
         if source is None:
             raise TaskServiceError("SENSITIVE_SOURCE_REATTACH_REQUIRED")
         return source
+
+    def source_path(self, task_id: str) -> Path:
+        return self._source_path(task_id)
 
     @staticmethod
     def _write_approval(task: TaskRecord, confirmation: dict[str, Any]) -> None:

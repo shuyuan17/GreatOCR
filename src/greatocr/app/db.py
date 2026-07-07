@@ -18,7 +18,7 @@ from greatocr.app.schemas import (
 )
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class TaskDatabase:
@@ -225,14 +225,15 @@ class TaskDatabase:
                 """
                 INSERT INTO provider_profiles (
                     profile_id, display_name, adapter_type, endpoint, model, public,
-                    capabilities, approved_fallback_ids
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    sensitive_allowed, capabilities, approved_fallback_ids
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(profile_id) DO UPDATE SET
                     display_name = excluded.display_name,
                     adapter_type = excluded.adapter_type,
                     endpoint = excluded.endpoint,
                     model = excluded.model,
                     public = excluded.public,
+                    sensitive_allowed = excluded.sensitive_allowed,
                     capabilities = excluded.capabilities,
                     approved_fallback_ids = excluded.approved_fallback_ids
                 """,
@@ -243,6 +244,7 @@ class TaskDatabase:
                     payload.get("endpoint"),
                     payload.get("model"),
                     int(bool(payload.get("public", True))),
+                    int(bool(payload.get("sensitive_allowed", False))),
                     json.dumps(payload.get("capabilities", {}), ensure_ascii=False),
                     json.dumps(payload.get("approved_fallback_ids", [])),
                 ),
@@ -330,6 +332,7 @@ class TaskDatabase:
                     endpoint TEXT,
                     model TEXT,
                     public INTEGER NOT NULL,
+                    sensitive_allowed INTEGER NOT NULL DEFAULT 0,
                     capabilities TEXT NOT NULL,
                     approved_fallback_ids TEXT NOT NULL
                 );
@@ -356,6 +359,8 @@ class TaskDatabase:
                     self._migrate_v2_to_v3()
                 elif current_version == 3 and SCHEMA_VERSION == 4:
                     self._migrate_v3_to_v4()
+                elif current_version == 4 and SCHEMA_VERSION == 5:
+                    self._migrate_v4_to_v5()
                 else:
                     raise RuntimeError(
                         f"Unsupported database schema version: {current_version}"
@@ -435,6 +440,23 @@ class TaskDatabase:
                 (SCHEMA_VERSION,),
             )
 
+    def _migrate_v4_to_v5(self) -> None:
+        with self._lock, self._connection:
+            provider_cols = {
+                row["name"]
+                for row in self._connection.execute(
+                    "PRAGMA table_info(provider_profiles)"
+                ).fetchall()
+            }
+            if "sensitive_allowed" not in provider_cols:
+                self._connection.execute(
+                    "ALTER TABLE provider_profiles ADD COLUMN sensitive_allowed INTEGER NOT NULL DEFAULT 0"
+                )
+            self._connection.execute(
+                "UPDATE schema_version SET version = ?",
+                (SCHEMA_VERSION,),
+            )
+
     def get_preferences(self) -> dict[str, str]:
         """返回所有偏好设置。"""
         with self._lock:
@@ -498,6 +520,7 @@ class TaskDatabase:
             "endpoint": row["endpoint"],
             "model": row["model"],
             "public": bool(row["public"]),
+            "sensitive_allowed": bool(row["sensitive_allowed"]),
             "capabilities": json.loads(row["capabilities"]),
             "approved_fallback_ids": json.loads(row["approved_fallback_ids"]),
         }

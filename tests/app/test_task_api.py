@@ -79,44 +79,15 @@ def create_task(client: TestClient, source: Path, *, sensitive: bool) -> dict:
     return response.json()
 
 
-def test_sensitive_public_task_cannot_start_without_exact_confirmation(api) -> None:
+def test_sensitive_task_is_blocked_when_provider_disallows_sensitive_files(api) -> None:
     client, _, _, tmp_path = api
     source = make_pdf(tmp_path / "sample.pdf")
     task = create_task(client, source, sensitive=True)
 
     missing = client.post(f"/api/tasks/{task['task_id']}/start", headers=headers())
-    wrong = client.post(
-        f"/api/tasks/{task['task_id']}/start",
-        headers=headers(),
-        json={
-            "confirmation": {
-                "confirmed": True,
-                "provider_profile_id": "mineru-default",
-                "source_file_name": "wrong.pdf",
-            }
-        },
-    )
 
     assert missing.status_code == 409
-    assert missing.json()["detail"]["code"] == "SENSITIVE_CONFIRMATION_REQUIRED"
-    assert wrong.status_code == 409
-
-    started = client.post(
-        f"/api/tasks/{task['task_id']}/start",
-        headers=headers(),
-        json={
-            "confirmation": {
-                "confirmed": True,
-                "provider_profile_id": "mineru-default",
-                "source_file_name": "sample.pdf",
-            }
-        },
-    )
-    assert started.status_code == 200
-    assert started.json()["status"] == "pending"
-    approval_path = Path(started.json()["output_dir"]) / "approval.json"
-    assert approval_path.is_file()
-    assert "test-secret" not in approval_path.read_text(encoding="utf-8")
+    assert missing.json()["detail"]["code"] == "SENSITIVE_PROVIDER_NOT_ALLOWED"
 
 
 def test_task_preflight_and_thumbnail_window(api) -> None:

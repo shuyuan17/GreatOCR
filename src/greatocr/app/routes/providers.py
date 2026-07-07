@@ -26,6 +26,7 @@ class ProviderProfileInput(BaseModel):
     endpoint: str | None = None
     model: str | None = None
     public: bool = True
+    sensitive_allowed: bool = False
     capabilities: dict[str, Any] = Field(default_factory=dict)
     approved_fallback_ids: list[str] = Field(default_factory=list)
 
@@ -36,6 +37,7 @@ class ProviderUpdate(BaseModel):
     display_name: str | None = None
     endpoint: str | None = None
     model: str | None = None
+    sensitive_allowed: bool | None = None
     capabilities: dict[str, Any] | None = None
     approved_fallback_ids: list[str] | None = None
 

@@ -78,6 +78,7 @@ ERROR_MESSAGES: dict[str, str] = {
     "CREDENTIAL_NOT_CONFIGURED": "当前 Provider 未配置 API Key，请前往设置中完成配置",
     "INVALID_PAGE_SELECTION": "页码范围无效，请重新选择",
     "SENSITIVE_CONFIRMATION_REQUIRED": "敏感文件需要额外确认才能提交",
+    "SENSITIVE_PROVIDER_NOT_ALLOWED": "当前任务使用的 Provider 不允许处理敏感文件",
     "TRANSLATION_PROVIDER_REQUIRED": "OCR + 翻译模式必须选择翻译 Provider",
     "TRANSLATION_PROVIDER_NOT_FOUND": "翻译 Provider 未找到",
     "TRANSLATION_CREDENTIAL_NOT_CONFIGURED": "翻译 Provider 未配置 API Key，请前往设置中完成配置",
@@ -85,6 +86,7 @@ ERROR_MESSAGES: dict[str, str] = {
     "SENSITIVE_SOURCE_REATTACH_REQUIRED": "敏感文件需要重新关联源文件",
     "UPLOAD_DIR_NOT_CONFIGURED": "上传目录未配置，请联系系统管理员",
     "PAGE_RANGE_REQUIRES_PDF": "只有 PDF 文件支持页码范围",
+    "INVALID_TRANSLATION_MODE": "当前仅支持 Page by Page 翻译模式",
     "RESULT_FILE_NOT_FOUND": "结果文件未找到，可能尚未生成或已被删除",
 }
 
@@ -148,9 +150,7 @@ def task_thumbnails(
             count=count,
         )
     )
-    return [
-        {"page_number": item.page_number, "path": str(item.path)} for item in items
-    ]
+    return [{"page_number": item.page_number, "path": str(item.path)} for item in items]
 
 
 @router.post("/{task_id}/start")
@@ -183,9 +183,7 @@ def retry_failed_pages(
     payload: RetryRequest,
     request: Request,
 ) -> dict[str, Any]:
-    task = _run(
-        lambda: _service(request).retry_failed_pages(task_id, payload.pages)
-    )
+    task = _run(lambda: _service(request).retry_failed_pages(task_id, payload.pages))
     return {**task.model_dump(), "retry_pages": payload.pages}
 
 
@@ -202,14 +200,12 @@ def open_task_output(task_id: str, request: Request) -> dict[str, str]:
 
 @router.delete("/{task_id}")
 def delete_task(task_id: str, request: Request) -> dict[str, str]:
-    """删除任务记录。不会删除输出文件或原始文件。"""
     _run(lambda: _service(request).delete(task_id))
     return {"status": "ok", "task_id": task_id}
 
 
 @router.post("/batch-delete")
 def batch_delete_tasks(payload: BatchDeleteRequest, request: Request) -> dict[str, str]:
-    """批量删除任务记录。不会删除输出文件或原始文件。"""
     _run(lambda: _service(request).batch_delete(payload.task_ids))
     return {"status": "ok", "deleted": str(len(payload.task_ids))}
 
@@ -240,20 +236,22 @@ def download_task_result(task_id: str, filename: str, request: Request) -> FileR
     if filename not in RESULT_FILES.values():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "RESULT_FILE_NOT_FOUND", "message": "结果文件未找到，可能尚未生成或已被删除"},
+            detail={
+                "code": "RESULT_FILE_NOT_FOUND",
+                "message": ERROR_MESSAGES["RESULT_FILE_NOT_FOUND"],
+            },
         )
     target = Path(task.output_dir) / filename
     if not target.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "RESULT_FILE_NOT_FOUND", "message": "结果文件未找到，可能尚未生成或已被删除"},
+            detail={
+                "code": "RESULT_FILE_NOT_FOUND",
+                "message": ERROR_MESSAGES["RESULT_FILE_NOT_FOUND"],
+            },
         )
     return FileResponse(target, filename=filename)
 
-
-# ---------------------------------------------------------------------------
-# 文件上传 + 创建任务（合并为一步，适合 Web 前端使用）
-# ---------------------------------------------------------------------------
 
 class UploadResult(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -278,43 +276,21 @@ async def upload_and_create_task(
     target_language: str = Form(""),
     translation_mode: str = Form(""),
 ) -> UploadResult:
-    """接收文件上传，保存到 uploads 目录后直接创建任务。
-
-    参数：
-      file:                          上传的文件（PDF 或图片）
-      sensitive:                     是否敏感任务（默认 false）
-      provider_profile_id:           OCR provider ID（向后兼容默认 mineru-default）
-      pages:                         逗号分隔的页码，如 "1,2,3"；留空表示全部页面
-      approved_fallback_ids:         逗号分隔的 fallback provider ID 列表
-      processing_mode:               处理模式 "ocr" 或 "translation"
-      ocr_provider_profile_id:       OCR provider（缺省回退到 provider_profile_id）
-      translation_provider_profile_id: 翻译 provider（translation 模式必填）
-      target_language:               翻译目标语言（translation 模式使用）
-      translation_mode:              翻译模式（当前仅 "page"）
-
-    返回：
-      task:      已创建的任务记录（状态为 paused）
-      file_path: 服务器上保存的文件路径
-      size_bytes: 文件大小
-    """
     upload_dir: Path | None = getattr(request.app.state, "upload_dir", None)
     if upload_dir is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "UPLOAD_DIR_NOT_CONFIGURED", "message": "上传目录未配置"},
+            detail={
+                "code": "UPLOAD_DIR_NOT_CONFIGURED",
+                "message": ERROR_MESSAGES["UPLOAD_DIR_NOT_CONFIGURED"],
+            },
         )
 
-    # 校验文件名，防止路径穿越
-    filename = file.filename or "upload"
-    safe_name = Path(filename).name
-    if not safe_name:
-        safe_name = "upload"
-
-    # 生成唯一子目录保存文件
+    filename = Path(file.filename or "upload").name or "upload"
     file_id = uuid.uuid4().hex
     save_dir = upload_dir / file_id
     save_dir.mkdir(parents=True, exist_ok=True)
-    save_path = save_dir / safe_name
+    save_path = save_dir / filename
 
     content = await file.read()
     save_path.write_bytes(content)
@@ -327,7 +303,10 @@ async def upload_and_create_task(
         except InvalidPdfError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "PAGE_RANGE_REQUIRES_PDF", "message": "只有 PDF 文件支持页码范围"},
+                detail={
+                    "code": "PAGE_RANGE_REQUIRES_PDF",
+                    "message": ERROR_MESSAGES["PAGE_RANGE_REQUIRES_PDF"],
+                },
             ) from exc
         try:
             parsed_pages = parse_page_ranges(pages, preflight.page_count).pages
@@ -337,7 +316,6 @@ async def upload_and_create_task(
                 detail={"code": "INVALID_PAGE_RANGE", "message": str(exc)},
             ) from exc
 
-    # 如果未指定页面，尝试预检获取总页数（仅 PDF）
     if not parsed_pages:
         try:
             if preflight is None:
@@ -345,29 +323,41 @@ async def upload_and_create_task(
             if not preflight.encrypted:
                 parsed_pages = list(range(1, preflight.page_count + 1))
         except InvalidPdfError:
-            # 不是有效 PDF（可能是图片），不设页面限制
             pass
         except Exception:
-            # 其他预检失败不阻塞上传
             pass
 
     parsed_fallback: list[str] = []
     if approved_fallback_ids and approved_fallback_ids.strip():
-        for f in approved_fallback_ids.split(","):
-            f = f.strip()
-            if f:
-                parsed_fallback.append(f)
+        parsed_fallback = [item.strip() for item in approved_fallback_ids.split(",") if item.strip()]
 
-    # 处理模式与翻译字段（向后兼容：缺省为 ocr，翻译字段留空不传）
     parsed_mode = processing_mode.strip() if processing_mode else "ocr"
     if parsed_mode not in {"ocr", "translation"}:
         parsed_mode = "ocr"
     parsed_ocr_provider = ocr_provider_profile_id.strip() or None
     parsed_translation_provider = translation_provider_profile_id.strip() or None
     parsed_target_language = target_language.strip() or None
-    parsed_translation_mode = translation_mode.strip() or None
+    raw_translation_mode = translation_mode.strip() or None
 
-    # 通过已有 TaskService 创建任务
+    try:
+        parsed_translation_mode = NewTask.model_validate(
+            {
+                "source_path": str(save_path),
+                "pages": parsed_pages,
+                "provider_profile_id": provider_profile_id,
+                "processing_mode": parsed_mode,
+                "translation_mode": raw_translation_mode,
+            }
+        ).translation_mode
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "INVALID_TRANSLATION_MODE",
+                "message": ERROR_MESSAGES["INVALID_TRANSLATION_MODE"],
+            },
+        ) from exc
+
     new_task = NewTask(
         source_path=str(save_path),
         sensitive=sensitive,
@@ -383,8 +373,4 @@ async def upload_and_create_task(
     )
     task = _run(lambda: _service(request).create(new_task))
 
-    return UploadResult(
-        task=task,
-        file_path=str(save_path),
-        size_bytes=len(content),
-    )
+    return UploadResult(task=task, file_path=str(save_path), size_bytes=len(content))

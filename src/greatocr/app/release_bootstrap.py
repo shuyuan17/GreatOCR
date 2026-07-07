@@ -34,6 +34,7 @@ def ensure_release_defaults(database: TaskDatabase, *, data_dir: Path) -> None:
                 "endpoint": "https://mineru.net",
                 "model": None,
                 "public": True,
+                "sensitive_allowed": False,
                 "capabilities": {
                     "native_pdf": True,
                     "scanned_pdf": True,
@@ -58,6 +59,7 @@ def ensure_release_defaults(database: TaskDatabase, *, data_dir: Path) -> None:
                 "endpoint": "https://api.deepseek.com/chat/completions",
                 "model": "deepseek-chat",
                 "public": True,
+                "sensitive_allowed": False,
                 "capabilities": {
                     "native_pdf": False,
                     "scanned_pdf": False,
@@ -83,6 +85,7 @@ def ensure_release_defaults(database: TaskDatabase, *, data_dir: Path) -> None:
                 "endpoint": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
                 "model": "glm-4-plus",
                 "public": True,
+                "sensitive_allowed": True,
                 "capabilities": {
                     "translation": True,
                     "text_processing": True,

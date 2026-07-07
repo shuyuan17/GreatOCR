@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 
 TaskStatus = Literal[
@@ -15,9 +15,18 @@ TaskStatus = Literal[
     "cancelled",
 ]
 RequestedTaskAction = Literal["pause", "cancel"]
-
-# 处理模式：仅 OCR，或 OCR + 翻译。
 ProcessingMode = Literal["ocr", "translation"]
+
+
+def normalize_translation_mode(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+    if normalized in {"page", "page by page"}:
+        return "page"
+    raise ValueError("unsupported translation mode")
 
 
 class NewTask(BaseModel):
@@ -29,17 +38,10 @@ class NewTask(BaseModel):
     provider_profile_id: str = "mineru-default"
     output_dir: str | None = None
     approved_fallback_ids: list[str] = Field(default_factory=list)
-
-    # ----- AI Processing 扩展字段（OCR + 翻译 MVP）-----
-    # 处理模式。向后兼容：缺省为 "ocr"（等同于现有 OCR 流程）。
     processing_mode: ProcessingMode = "ocr"
-    # OCR Provider（新字段）。缺省时回退到 provider_profile_id，保持兼容。
     ocr_provider_profile_id: str | None = None
-    # 翻译 Provider（translation 模式必填）。
     translation_provider_profile_id: str | None = None
-    # 翻译目标语言（translation 模式使用）。
     target_language: str | None = None
-    # 翻译模式（当前仅 "page" 即逐页翻译）。
     translation_mode: str | None = None
 
     @field_validator("pages")
@@ -48,6 +50,19 @@ class NewTask(BaseModel):
         if any(page < 1 for page in pages):
             raise ValueError("selected pages must be positive")
         return list(dict.fromkeys(pages))
+
+    @field_validator("translation_mode")
+    @classmethod
+    def validate_translation_mode(
+        cls,
+        value: str | None,
+        info: ValidationInfo,
+    ) -> str | None:
+        processing_mode = info.data.get("processing_mode")
+        normalized = normalize_translation_mode(value)
+        if processing_mode == "translation":
+            return normalized or "page"
+        return normalized
 
 
 class TaskRecord(BaseModel):
@@ -66,8 +81,6 @@ class TaskRecord(BaseModel):
     requested_action: RequestedTaskAction | None = None
     created_at: str
     completed_at: str | None = None
-
-    # ----- AI Processing 扩展字段 -----
     processing_mode: ProcessingMode = "ocr"
     ocr_provider_profile_id: str | None = None
     translation_provider_profile_id: str | None = None
