@@ -50,6 +50,9 @@ import {
   type WorkflowConfig,
 } from "./aiProcessing"
 
+import greatocrIcon from "./assets/greatocr-icon.png?url"
+import greatocrLogo from "./assets/greatocr-logo.png?url"
+
 type HealthState = "loading" | "ok" | "error"
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -64,7 +67,7 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
 
 const STATUS_COLORS: Record<TaskStatus, string> = {
   pending: "#856404",
-  running: "#1565c0",
+  running: "#FFC400",
   paused: "#6a1b9a",
   succeeded: "#2e7d32",
   partial: "#e65100",
@@ -191,10 +194,10 @@ function HealthBadge() {
           fontSize: "0.8rem",
           padding: "2px 10px",
           borderRadius: 12,
-          background: state === "ok" ? "#e6f7e6" : state === "error" ? "#fde8e8" : "#fff3cd",
-          color: state === "ok" ? "#2e7d32" : state === "error" ? "#c62828" : "#856404",
+          background: state === "ok" ? "#1b3a1b" : state === "error" ? "#3a1212" : "#2a2310",
+          color: state === "ok" ? "#4caf50" : state === "error" ? "#ef5350" : "#FFC400",
           border: `1px solid ${
-            state === "ok" ? "#a5d6a7" : state === "error" ? "#ef9a9a" : "#ffe082"
+            state === "ok" ? "#2e7d32" : state === "error" ? "#c62828" : "#FFC400"
           }`,
           display: "inline-flex",
           alignItems: "center",
@@ -210,9 +213,9 @@ function HealthBadge() {
           style={{
             fontSize: "0.75rem",
             padding: "2px 10px",
-            color: "#1565c0",
-            background: "#e3f2fd",
-            border: "1px solid #90caf9",
+            color: "#FFC400",
+            background: "#1a1a1a",
+            border: "1px solid #FFC400",
             borderRadius: 12,
             cursor: "pointer",
             whiteSpace: "nowrap",
@@ -223,7 +226,7 @@ function HealthBadge() {
       )}
       {state === "error" && (
         <span
-          style={{ fontSize: "0.75rem", color: "#888", cursor: "default" }}
+          style={{ fontSize: "0.75rem", color: "#808080", cursor: "default" }}
           title="确保后端已启动（在终端运行 serve.py）"
         >
           ⓘ
@@ -398,15 +401,15 @@ function NewTaskPage() {
 
   return (
     <div style={{ padding: "2rem", maxWidth: 640, margin: "0 auto" }}>
-      <h2 style={{ marginTop: 0, color: "#333" }}>AI Processing</h2>
-      <div style={{ marginBottom: 16, fontSize: "0.9rem", color: "#666" }}>
+      <h2 style={{ marginTop: 0, color: "#f0f0f0" }}>AI Processing</h2>
+      <div style={{ marginBottom: 16, fontSize: "0.9rem", color: "#a0a0a0" }}>
         OCR + AI 后处理工作流
       </div>
 
       <div style={{ marginBottom: 16 }}>
         <label
           htmlFor="source-file"
-          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
+          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#bdbdbd" }}
         >
           选择文件（图片或 PDF）
         </label>
@@ -428,7 +431,7 @@ function NewTaskPage() {
           style={{ fontSize: "0.95rem" }}
         />
         {file && (
-          <div style={{ marginTop: 6, fontSize: "0.85rem", color: "#666" }}>
+          <div style={{ marginTop: 6, fontSize: "0.85rem", color: "#a0a0a0" }}>
             {file.name} ({formatSize(file.size)})
           </div>
         )}
@@ -437,7 +440,7 @@ function NewTaskPage() {
       <div style={{ marginBottom: 16 }}>
         <label
           htmlFor="page-range"
-          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
+          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#bdbdbd" }}
         >
           页码范围
         </label>
@@ -463,7 +466,7 @@ function NewTaskPage() {
           style={{
             marginTop: 6,
             fontSize: "0.8rem",
-            color: pageRangeError ? "#c62828" : "#666",
+            color: pageRangeError ? "#c62828" : "#a0a0a0",
           }}
         >
           {pageRangeError ||
@@ -476,7 +479,7 @@ function NewTaskPage() {
       <div style={{ marginBottom: 16 }}>
         <label
           htmlFor="sensitive-select"
-          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
+          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#bdbdbd" }}
         >
           是否敏感文件？
         </label>
@@ -494,7 +497,7 @@ function NewTaskPage() {
             </option>
           ))}
         </select>
-        <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#666" }}>
+        <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#a0a0a0" }}>
           敏感文件会限制可用 Provider，避免发送到不合适的外部服务。
         </div>
       </div>
@@ -502,7 +505,7 @@ function NewTaskPage() {
       <div style={{ marginBottom: 16 }}>
         <label
           htmlFor="ai-mode-select"
-          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
+          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#bdbdbd" }}
         >
           Processing Mode
         </label>
@@ -520,7 +523,7 @@ function NewTaskPage() {
             </option>
           ))}
         </select>
-        <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#666" }}>
+        <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#a0a0a0" }}>
           {currentMode.description}
         </div>
         {aiMode === "translation" && (
@@ -528,7 +531,7 @@ function NewTaskPage() {
             style={{
               marginTop: 12,
               paddingLeft: 12,
-              borderLeft: "3px solid #e0e0e0",
+              borderLeft: "3px solid #333333",
             }}
           >
             <div style={{ marginBottom: 16 }}>
@@ -538,7 +541,7 @@ function NewTaskPage() {
                   display: "block",
                   marginBottom: 6,
                   fontWeight: 500,
-                  color: "#555",
+                  color: "#bdbdbd",
                 }}
               >
                 Target Language
@@ -567,7 +570,7 @@ function NewTaskPage() {
                   display: "block",
                   marginBottom: 6,
                   fontWeight: 500,
-                  color: "#555",
+                  color: "#bdbdbd",
                 }}
               >
                 Translation Mode
@@ -589,7 +592,7 @@ function NewTaskPage() {
                 ))}
               </select>
             </div>
-            <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#666" }}>
+            <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#a0a0a0" }}>
               Page by Page 会使用 OCR 时选择的页码范围，不需要用户重新输入页码。如果 OCR
               页码范围为空，则翻译全部 OCR 结果。
             </div>
@@ -600,7 +603,7 @@ function NewTaskPage() {
       <div style={{ marginBottom: 16 }}>
         <label
           htmlFor="output-dir"
-          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#555" }}
+          style={{ display: "block", marginBottom: 6, fontWeight: 500, color: "#bdbdbd" }}
         >
           输出路径
         </label>
@@ -622,7 +625,7 @@ function NewTaskPage() {
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <div style={{ marginBottom: 6, fontWeight: 500, color: "#555" }}>
+        <div style={{ marginBottom: 6, fontWeight: 500, color: "#bdbdbd" }}>
           Output Preview
         </div>
         <ul
@@ -630,7 +633,7 @@ function NewTaskPage() {
             margin: 0,
             paddingLeft: 20,
             fontSize: "0.9rem",
-            color: "#333",
+            color: "#f0f0f0",
             lineHeight: 1.8,
           }}
         >
@@ -641,17 +644,17 @@ function NewTaskPage() {
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <div style={{ marginBottom: 6, fontWeight: 500, color: "#555" }}>
+        <div style={{ marginBottom: 6, fontWeight: 500, color: "#bdbdbd" }}>
           当前工作流
         </div>
-        <div style={{ fontSize: "0.95rem", color: "#333", marginBottom: 4 }}>
+        <div style={{ fontSize: "0.95rem", color: "#f0f0f0", marginBottom: 4 }}>
           OCR Provider：{ocrProviderName}
         </div>
-        <div style={{ fontSize: "0.95rem", color: "#333" }}>
+        <div style={{ fontSize: "0.95rem", color: "#f0f0f0" }}>
           Translation Provider：
           {aiMode === "translation" ? translationProviderName : "未启用"}
         </div>
-        <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#666" }}>
+        <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#a0a0a0" }}>
           新建任务页会使用设置中选择的默认 Provider。
         </div>
       </div>
@@ -684,8 +687,8 @@ function NewTaskPage() {
           padding: "10px 28px",
           fontSize: "1rem",
           fontWeight: 600,
-          color: "#fff",
-          background: phase !== "idle" ? "#9e9e9e" : "#1565c0",
+          color: "#0b0b0b",
+          background: phase !== "idle" ? "#9e9e9e" : "#FFC400",
           border: "none",
           borderRadius: 6,
           cursor: phase !== "idle" ? "not-allowed" : "pointer",
@@ -710,16 +713,16 @@ function NewTaskPage() {
             ...statusStyle,
             background:
               phase === "error"
-                ? "#fde8e8"
+                ? "#2a1414"
                 : phase === "done" && task?.status === "succeeded"
-                  ? "#e6f7e6"
-                  : "#e3f2fd",
+                  ? "#14241a"
+                  : "#1a1a1a",
             color:
               phase === "error"
-                ? "#c62828"
+                ? "#ff6b6b"
                 : phase === "done" && task?.status === "succeeded"
-                  ? "#2e7d32"
-                  : "#1565c0",
+                  ? "#6bd49a"
+                  : "#FFC400",
           }}
         >
           <div>
@@ -761,9 +764,9 @@ function NewTaskPage() {
             style={{
               padding: "8px 20px",
               fontSize: "0.95rem",
-              color: "#1565c0",
-              background: "#e3f2fd",
-              border: "1px solid #90caf9",
+              color: "#FFC400",
+              background: "#1a1a1a",
+              border: "1px solid #2a2a2a",
               borderRadius: 6,
               cursor: "pointer",
             }}
@@ -950,15 +953,15 @@ function TaskCenterPage() {
     textAlign: "left",
     fontWeight: 600,
     fontSize: "0.85rem",
-    color: "#555",
-    borderBottom: "2px solid #e0e0e0",
+    color: "#bdbdbd",
+    borderBottom: "2px solid #2a2a2a",
     whiteSpace: "nowrap",
   }
   const tdStyle: CSSProperties = {
     padding: "8px 10px",
     fontSize: "0.85rem",
-    color: "#333",
-    borderBottom: "1px solid #eee",
+    color: "#f0f0f0",
+    borderBottom: "1px solid #2a2a2a",
     verticalAlign: "middle",
   }
 
@@ -972,10 +975,10 @@ function TaskCenterPage() {
           marginBottom: 16,
         }}
       >
-        <h2 style={{ margin: 0, color: "#333" }}>任务中心</h2>
+        <h2 style={{ margin: 0, color: "#f0f0f0" }}>任务中心</h2>
         {selectedCount > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: "0.85rem", color: "#666" }}>已选 {selectedCount} 项</span>
+            <span style={{ fontSize: "0.85rem", color: "#a0a0a0" }}>已选 {selectedCount} 项</span>
             <button
               onClick={() => setBatchDeleteConfirm(true)}
               style={{
@@ -994,10 +997,10 @@ function TaskCenterPage() {
         )}
       </div>
 
-      {loading && <div style={{ color: "#888", padding: "2rem 0" }}>加载中...</div>}
+      {loading && <div style={{ color: "#808080", padding: "2rem 0" }}>加载中...</div>}
 
       {!loading && tasks.length === 0 && (
-        <div style={{ color: "#888", padding: "2rem 0", textAlign: "center" }}>
+        <div style={{ color: "#808080", padding: "2rem 0", textAlign: "center" }}>
           暂无任务，请前往“新建任务”开始。
         </div>
       )}
@@ -1011,10 +1014,10 @@ function TaskCenterPage() {
                 marginBottom: 16,
                 padding: "12px 16px",
                 borderRadius: 8,
-                background: "#fff3cd",
-                border: "1px solid #ffe082",
+                background: "#2a2310",
+                border: "1px solid #FFC400",
                 fontSize: "0.9rem",
-                color: "#856404",
+                color: "#FFC400",
               }}
             >
               <div style={{ marginBottom: 8 }}>
@@ -1040,9 +1043,9 @@ function TaskCenterPage() {
                   style={{
                     padding: "6px 16px",
                     fontSize: "0.9rem",
-                    color: "#333",
-                    background: "#fff",
-                    border: "1px solid #ccc",
+                    color: "#f0f0f0",
+                    background: "#1a1a1a",
+                    border: "1px solid #2a2a2a",
                     borderRadius: 6,
                     cursor: "pointer",
                   }}
@@ -1056,7 +1059,7 @@ function TaskCenterPage() {
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
               <thead>
-                <tr style={{ background: "#fafafa" }}>
+                <tr style={{ background: "#1a1a1a" }}>
                   <th style={{ ...thStyle, width: 36, textAlign: "center" }}>
                     <input
                       type="checkbox"
@@ -1092,7 +1095,7 @@ function TaskCenterPage() {
                     <tr
                       key={task.task_id}
                       style={{
-                        background: focusTaskId === task.task_id ? "#f6fbff" : undefined,
+                        background: focusTaskId === task.task_id ? "#142433" : undefined,
                       }}
                     >
                       {/* 选择框 */}
@@ -1138,7 +1141,7 @@ function TaskCenterPage() {
                                 marginTop: 6,
                                 fontSize: "0.78rem",
                                 lineHeight: 1.4,
-                                color: "#666",
+                                color: "#a0a0a0",
                                 minWidth: 220,
                               }}
                             >
@@ -1174,9 +1177,9 @@ function TaskCenterPage() {
                             style={{
                               padding: "2px 8px",
                               fontSize: "0.8rem",
-                              color: "#1565c0",
-                              background: "#e3f2fd",
-                              border: "1px solid #90caf9",
+                              color: "#FFC400",
+                              background: "#1a1a1a",
+                              border: "1px solid #2a2a2a",
                               borderRadius: 4,
                               cursor: "pointer",
                             }}
@@ -1189,9 +1192,9 @@ function TaskCenterPage() {
                             style={{
                               padding: "2px 8px",
                               fontSize: "0.8rem",
-                              color: copyFeedback === task.output_dir ? "#2e7d32" : "#1565c0",
-                              background: copyFeedback === task.output_dir ? "#e6f7e6" : "#e3f2fd",
-                              border: `1px solid ${copyFeedback === task.output_dir ? "#a5d6a7" : "#90caf9"}`,
+                              color: copyFeedback === task.output_dir ? "#2e7d32" : "#FFC400",
+                              background: copyFeedback === task.output_dir ? "#1b3a1b" : "#1a1a1a",
+                              border: `1px solid ${copyFeedback === task.output_dir ? "#2e7d32" : "#2a2a2a"}`,
                               borderRadius: 4,
                               cursor: "pointer",
                             }}
@@ -1204,9 +1207,9 @@ function TaskCenterPage() {
                             style={{
                               padding: "2px 8px",
                               fontSize: "0.8rem",
-                              color: "#c62828",
-                              background: "#fde8e8",
-                              border: "1px solid #ef9a9a",
+                              color: "#ff6b6b",
+                              background: "#2a1414",
+                              border: "1px solid #5c2a2a",
                               borderRadius: 4,
                               cursor: "pointer",
                             }}
@@ -1217,14 +1220,14 @@ function TaskCenterPage() {
                           {isTerminal && (
                             <div style={{ display: "inline-flex", gap: 2, alignItems: "center" }}>
                               {isResultLoading && (
-                                <span style={{ fontSize: "0.75rem", color: "#999" }}>加载中</span>
+                                <span style={{ fontSize: "0.75rem", color: "#808080" }}>加载中</span>
                               )}
                               {summary?.files.result_docx.exists && summary.files.result_docx.download_path ? (
                                 <a
                                   href={summary.files.result_docx.download_path}
                                   style={{
                                     fontSize: "0.85rem",
-                                    color: "#1565c0",
+                                    color: "#FFC400",
                                     textDecoration: "underline",
                                     padding: "0 4px",
                                   }}
@@ -1236,7 +1239,7 @@ function TaskCenterPage() {
                                 <span
                                   style={{
                                     fontSize: "0.8rem",
-                                    color: "#999",
+                                    color: "#808080",
                                     padding: "0 4px",
                                   }}
                                   title="文件暂不可下载"
@@ -1249,7 +1252,7 @@ function TaskCenterPage() {
                                   href={summary.files.quality_report_docx.download_path}
                                   style={{
                                     fontSize: "0.85rem",
-                                    color: "#1565c0",
+                                    color: "#FFC400",
                                     textDecoration: "underline",
                                     padding: "0 4px",
                                   }}
@@ -1261,7 +1264,7 @@ function TaskCenterPage() {
                                 <span
                                   style={{
                                     fontSize: "0.8rem",
-                                    color: "#999",
+                                    color: "#808080",
                                     padding: "0 4px",
                                   }}
                                   title="文件暂不可下载"
@@ -1274,7 +1277,7 @@ function TaskCenterPage() {
                                   href={summary.files.translated_docx.download_path}
                                   style={{
                                     fontSize: "0.85rem",
-                                    color: "#1565c0",
+                                    color: "#FFC400",
                                     textDecoration: "underline",
                                     padding: "0 4px",
                                   }}
@@ -1286,7 +1289,7 @@ function TaskCenterPage() {
                                 <span
                                   style={{
                                     fontSize: "0.8rem",
-                                    color: "#999",
+                                    color: "#808080",
                                     padding: "0 4px",
                                   }}
                                   title="文件暂不可下载"
@@ -1305,10 +1308,10 @@ function TaskCenterPage() {
                               marginTop: 6,
                               padding: "8px 12px",
                               borderRadius: 6,
-                              background: "#fff3cd",
-                              border: "1px solid #ffe082",
+                              background: "#2a2310",
+                              border: "1px solid #FFC400",
                               fontSize: "0.8rem",
-                              color: "#856404",
+                              color: "#FFC400",
                             }}
                           >
                             <div style={{ marginBottom: 6 }}>
@@ -1334,9 +1337,9 @@ function TaskCenterPage() {
                                 style={{
                                   padding: "4px 12px",
                                   fontSize: "0.8rem",
-                                  color: "#333",
-                                  background: "#fff",
-                                  border: "1px solid #ccc",
+                                  color: "#f0f0f0",
+                                  background: "#1a1a1a",
+                                  border: "1px solid #2a2a2a",
                                   borderRadius: 4,
                                   cursor: "pointer",
                                 }}
@@ -1363,7 +1366,7 @@ function TaskCenterPage() {
               gap: 16,
               marginTop: 20,
               fontSize: "0.9rem",
-              color: "#666",
+              color: "#a0a0a0",
             }}
           >
             <button
@@ -1372,9 +1375,9 @@ function TaskCenterPage() {
               style={{
                 padding: "6px 16px",
                 fontSize: "0.9rem",
-                color: safePage <= 1 ? "#ccc" : "#1565c0",
-                background: safePage <= 1 ? "#f5f5f5" : "#e3f2fd",
-                border: `1px solid ${safePage <= 1 ? "#e0e0e0" : "#90caf9"}`,
+                color: safePage <= 1 ? "#808080" : "#FFC400",
+                background: safePage <= 1 ? "#1a1a1a" : "#1a1a1a",
+                border: `1px solid ${safePage <= 1 ? "#2a2a2a" : "#2a2a2a"}`,
                 borderRadius: 6,
                 cursor: safePage <= 1 ? "not-allowed" : "pointer",
               }}
@@ -1390,9 +1393,9 @@ function TaskCenterPage() {
               style={{
                 padding: "6px 16px",
                 fontSize: "0.9rem",
-                color: safePage >= totalPages ? "#ccc" : "#1565c0",
-                background: safePage >= totalPages ? "#f5f5f5" : "#e3f2fd",
-                border: `1px solid ${safePage >= totalPages ? "#e0e0e0" : "#90caf9"}`,
+                color: safePage >= totalPages ? "#808080" : "#FFC400",
+                background: safePage >= totalPages ? "#1a1a1a" : "#1a1a1a",
+                border: `1px solid ${safePage >= totalPages ? "#2a2a2a" : "#2a2a2a"}`,
                 borderRadius: 6,
                 cursor: safePage >= totalPages ? "not-allowed" : "pointer",
               }}
@@ -1525,25 +1528,25 @@ function SettingsPage() {
   const sectionStyle: CSSProperties = {
     marginBottom: 32,
     padding: 20,
-    border: "1px solid #e0e0e0",
+    border: "1px solid #2a2a2a",
     borderRadius: 10,
-    background: "#fff",
+    background: "#1a1a1a",
   }
 
   const sectionTitleStyle: CSSProperties = {
     margin: "0 0 16px 0",
     fontSize: "1.1rem",
     fontWeight: 600,
-    color: "#333",
+    color: "#f0f0f0",
     paddingBottom: 8,
-    borderBottom: "2px solid #e0e0e0",
+    borderBottom: "2px solid #333333",
   }
 
   const labelStyle: CSSProperties = {
     display: "block",
     marginBottom: 6,
     fontWeight: 500,
-    color: "#555",
+    color: "#bdbdbd",
     fontSize: "0.9rem",
   }
 
@@ -1552,8 +1555,10 @@ function SettingsPage() {
     fontSize: "0.95rem",
     padding: "8px 10px",
     boxSizing: "border-box",
-    border: "1px solid #ccc",
+    border: "1px solid #2a2a2a",
     borderRadius: 6,
+    background: "#1a1a1a",
+    color: "#f0f0f0",
   }
 
   const selectStyle: CSSProperties = {
@@ -1572,8 +1577,8 @@ function SettingsPage() {
     padding: "8px 20px",
     fontSize: "0.9rem",
     fontWeight: 500,
-    color: "#fff",
-    background: "#1565c0",
+    color: "#0b0b0b",
+    background: "#FFC400",
     border: "none",
     borderRadius: 6,
     cursor: "pointer",
@@ -1582,9 +1587,9 @@ function SettingsPage() {
   const btnSecondaryStyle: CSSProperties = {
     padding: "6px 16px",
     fontSize: "0.85rem",
-    color: "#1565c0",
-    background: "#e3f2fd",
-    border: "1px solid #90caf9",
+    color: "#FFC400",
+    background: "#1a1a1a",
+    border: "1px solid #2a2a2a",
     borderRadius: 6,
     cursor: "pointer",
   }
@@ -1600,9 +1605,9 @@ function SettingsPage() {
     padding: "2px 8px",
     fontSize: "0.75rem",
     borderRadius: 10,
-    background: "#eef2f7",
-    color: "#37474f",
-    border: "1px solid #d6dde6",
+    background: "#1f1f1f",
+    color: "#bdbdbd",
+    border: "1px solid #2a2a2a",
   }
 
   // 依据前端目录渲染 Provider 卡片；real 为后端真实数据（用于配置状态）。
@@ -1617,7 +1622,7 @@ function SettingsPage() {
 
   return (
     <div style={{ padding: "2rem", maxWidth: 800, margin: "0 auto" }}>
-      <h2 style={{ marginTop: 0, color: "#333" }}>设置</h2>
+      <h2 style={{ marginTop: 0, color: "#f0f0f0" }}>设置</h2>
 
       {saveMsg && (
         <div
@@ -1636,7 +1641,7 @@ function SettingsPage() {
         </div>
       )}
 
-      {loading && <div style={{ color: "#888" }}>加载中...</div>}
+      {loading && <div style={{ color: "#808080" }}>加载中...</div>}
 
       {!loading && (
         <>
@@ -1658,9 +1663,9 @@ function SettingsPage() {
                     style={{
                       padding: 16,
                       marginBottom: 12,
-                      border: "1px solid #e0e0e0",
+                      border: "1px solid #2a2a2a",
                       borderRadius: 8,
-                      background: "#f5f5f5",
+                      background: "#1a1a1a",
                       opacity: 0.75,
                     }}
                   >
@@ -1672,7 +1677,7 @@ function SettingsPage() {
                         marginBottom: 8,
                       }}
                     >
-                      <span style={{ fontWeight: 600, color: "#333", fontSize: "1rem" }}>
+                      <span style={{ fontWeight: 600, color: "#f0f0f0", fontSize: "1rem" }}>
                         {entry.displayName}
                       </span>
                       <span
@@ -1680,19 +1685,19 @@ function SettingsPage() {
                           fontSize: "0.75rem",
                           padding: "2px 10px",
                           borderRadius: 12,
-                          background: "#eeeeee",
-                          color: "#888",
-                          border: "1px solid #dddddd",
+                          background: "#2a2a2a",
+                          color: "#808080",
+                          border: "1px solid #2a2a2a",
                         }}
                       >
                         Coming Soon
                       </span>
                     </div>
-                    <div style={{ fontSize: "0.8rem", color: "#888", marginBottom: 8 }}>
+                    <div style={{ fontSize: "0.8rem", color: "#808080", marginBottom: 8 }}>
                       Type: AI Provider
                     </div>
                     <div style={{ marginBottom: 6 }}>
-                      <span style={{ fontSize: "0.8rem", color: "#555", fontWeight: 500 }}>
+                      <span style={{ fontSize: "0.8rem", color: "#bdbdbd", fontWeight: 500 }}>
                         Capabilities:
                       </span>
                       {entry.capabilities.map((cap) => (
@@ -1702,13 +1707,13 @@ function SettingsPage() {
                       ))}
                     </div>
                     <div>
-                      <span style={{ fontSize: "0.8rem", color: "#555", fontWeight: 500 }}>
+                      <span style={{ fontSize: "0.8rem", color: "#bdbdbd", fontWeight: 500 }}>
                         Sensitive File:
                       </span>{" "}
                       <span
                         style={{
                           fontSize: "0.8rem",
-                            color: entry.effectiveSensitiveAllowed ? "#2e7d32" : "#888",
+                            color: entry.effectiveSensitiveAllowed ? "#2e7d32" : "#808080",
                           }}
                         >
                         {entry.effectiveSensitiveAllowed ? "Allowed" : "Not Allowed"}
@@ -1724,9 +1729,9 @@ function SettingsPage() {
                   style={{
                     padding: 16,
                     marginBottom: 12,
-                    border: "1px solid #e0e0e0",
+                    border: "1px solid #2a2a2a",
                     borderRadius: 8,
-                    background: "#fafafa",
+                    background: "#1a1a1a",
                   }}
                 >
                   <div
@@ -1737,7 +1742,7 @@ function SettingsPage() {
                       marginBottom: 10,
                     }}
                   >
-                    <span style={{ fontWeight: 600, color: "#333", fontSize: "1rem" }}>
+                    <span style={{ fontWeight: 600, color: "#f0f0f0", fontSize: "1rem" }}>
                       {entry.displayName}
                     </span>
                     <span
@@ -1755,12 +1760,12 @@ function SettingsPage() {
                     </span>
                   </div>
 
-                  <div style={{ fontSize: "0.8rem", color: "#888", marginBottom: 8 }}>
+                  <div style={{ fontSize: "0.8rem", color: "#808080", marginBottom: 8 }}>
                     Type: AI Provider
                   </div>
 
                   <div style={{ marginBottom: 6 }}>
-                    <span style={{ fontSize: "0.8rem", color: "#555", fontWeight: 500 }}>
+                    <span style={{ fontSize: "0.8rem", color: "#bdbdbd", fontWeight: 500 }}>
                       Capabilities:
                     </span>
                     {entry.capabilities.map((cap) => (
@@ -1770,7 +1775,7 @@ function SettingsPage() {
                     ))}
                   </div>
                   <div style={{ marginBottom: 12 }}>
-                    <span style={{ fontSize: "0.8rem", color: "#555", fontWeight: 500 }}>
+                    <span style={{ fontSize: "0.8rem", color: "#bdbdbd", fontWeight: 500 }}>
                       Sensitive File:
                     </span>{" "}
                     <span
@@ -1815,9 +1820,9 @@ function SettingsPage() {
                         style={{
                           padding: "8px 12px",
                           fontSize: "0.85rem",
-                          color: "#555",
-                          background: "#f5f5f5",
-                          border: "1px solid #ccc",
+                          color: "#bdbdbd",
+                          background: "#1a1a1a",
+                          border: "1px solid #2a2a2a",
                           borderRadius: 6,
                           cursor: "pointer",
                           whiteSpace: "nowrap",
@@ -1910,8 +1915,8 @@ function SettingsPage() {
                         padding: "6px 16px",
                         fontSize: "0.85rem",
                         color: "#9e9e9e",
-                        background: "#f5f5f5",
-                        border: "1px solid #e0e0e0",
+                        background: "#1a1a1a",
+                        border: "1px solid #2a2a2a",
                         borderRadius: 6,
                         cursor: "not-allowed",
                       }}
@@ -1931,9 +1936,9 @@ function SettingsPage() {
                   padding: "8px 20px",
                   fontSize: "0.9rem",
                   fontWeight: 500,
-                  color: "#1565c0",
-                  background: "#e3f2fd",
-                  border: "1px solid #90caf9",
+                  color: "#0b0b0b",
+                  background: "#FFC400",
+                  border: "1px solid #0b0b0b",
                   borderRadius: 6,
                   cursor: "pointer",
                 }}
@@ -1946,10 +1951,10 @@ function SettingsPage() {
                     marginTop: 10,
                     padding: "10px 14px",
                     borderRadius: 6,
-                    background: "#fff3cd",
-                    border: "1px solid #ffe082",
+                    background: "#2a2310",
+                    border: "1px solid #FFC400",
                     fontSize: "0.9rem",
-                    color: "#856404",
+                    color: "#FFC400",
                   }}
                 >
                   {addProviderNotice}
@@ -2016,7 +2021,7 @@ function SettingsPage() {
               </select>
             </div>
 
-            <div style={{ fontSize: "0.8rem", color: "#666", lineHeight: 1.6 }}>
+            <div style={{ fontSize: "0.8rem", color: "#a0a0a0", lineHeight: 1.6 }}>
               新建任务页会使用这里选择的默认 Provider。
               <br />
               如果任务标记为敏感文件，只允许使用标记为“允许处理敏感文件”的 Provider。
@@ -2043,7 +2048,7 @@ function SettingsPage() {
                 <option value="ja">日文</option>
                 <option value="other">其它（如 Provider 支持）</option>
               </select>
-              <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#888" }}>
+              <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#808080" }}>
                 {saving["ocr_language"] ? "保存中..." : ""}
               </div>
             </div>
@@ -2060,7 +2065,7 @@ function SettingsPage() {
                   )
                 }
               />
-              <label htmlFor="sensitive-mode" style={{ fontSize: "0.9rem", color: "#555", cursor: "pointer" }}>
+              <label htmlFor="sensitive-mode" style={{ fontSize: "0.9rem", color: "#bdbdbd", cursor: "pointer" }}>
                 敏感文件模式
               </label>
             </div>
@@ -2082,7 +2087,7 @@ function SettingsPage() {
                   )
                 }
               />
-              <label htmlFor="process-all-pages" style={{ fontSize: "0.9rem", color: "#555", cursor: "pointer" }}>
+              <label htmlFor="process-all-pages" style={{ fontSize: "0.9rem", color: "#bdbdbd", cursor: "pointer" }}>
                 默认处理全部页面
               </label>
             </div>
@@ -2101,7 +2106,7 @@ function SettingsPage() {
                 placeholder="例如：1-3,5,7-9"
                 style={inputStyle}
               />
-              <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#888" }}>
+              <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#808080" }}>
                 {saving["pdf_default_page_range"] ? "保存中..." : "上传时自动带入，但允许用户修改"}
               </div>
             </div>
@@ -2139,12 +2144,12 @@ function SettingsPage() {
                   )
                 }
               />
-              <label htmlFor="same-as-input" style={{ fontSize: "0.9rem", color: "#555", cursor: "pointer" }}>
+              <label htmlFor="same-as-input" style={{ fontSize: "0.9rem", color: "#bdbdbd", cursor: "pointer" }}>
                 默认与输入文件同目录
               </label>
             </div>
             {preferences["output_same_as_input"] === "true" && (
-              <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#888" }}>
+              <div style={{ marginTop: 4, fontSize: "0.8rem", color: "#808080" }}>
                 开启后，自动使用：输入目录/GreatOCR_Output/
               </div>
             )}
@@ -2166,7 +2171,7 @@ function SettingsPage() {
                   )
                 }
               />
-              <label htmlFor="export-docx" style={{ fontSize: "0.9rem", color: "#555", cursor: "pointer" }}>
+              <label htmlFor="export-docx" style={{ fontSize: "0.9rem", color: "#bdbdbd", cursor: "pointer" }}>
                 默认导出 DOCX
               </label>
             </div>
@@ -2183,7 +2188,7 @@ function SettingsPage() {
                   )
                 }
               />
-              <label htmlFor="generate-quality-report" style={{ fontSize: "0.9rem", color: "#555", cursor: "pointer" }}>
+              <label htmlFor="generate-quality-report" style={{ fontSize: "0.9rem", color: "#bdbdbd", cursor: "pointer" }}>
                 生成 Quality Report
               </label>
             </div>
@@ -2192,7 +2197,7 @@ function SettingsPage() {
           {/* ============ 七、配置管理 ============ */}
           <div style={sectionStyle}>
             <h3 style={sectionTitleStyle}>七、配置管理</h3>
-            <div style={{ fontSize: "0.9rem", color: "#555", lineHeight: 1.8 }}>
+            <div style={{ fontSize: "0.9rem", color: "#bdbdbd", lineHeight: 1.8 }}>
               <p style={{ margin: 0 }}>
                 ✅ 所有配置已持久化保存到本地 SQLite 数据库。
               </p>
@@ -2215,23 +2220,48 @@ function SettingsPage() {
 
 function HomePage() {
   return (
-    <div style={{ padding: "3rem 2rem", textAlign: "center", color: "#666", fontSize: "1.1rem" }}>
-      <h2 style={{ color: "#333" }}>欢迎使用 GreatOCR</h2>
-      <p style={{ marginTop: "1rem", color: "#888" }}>
-        本地文档处理工具：PDF 重建、OCR 处理与结果查看
+    <div
+      style={{
+        minHeight: "72vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        padding: "4rem 2rem",
+        background: "radial-gradient(120% 120% at 50% 0%, #1b1b1b 0%, #0b0b0b 60%)",
+        color: "#ffffff",
+      }}
+    >
+      <img
+        src={greatocrLogo}
+        alt="GreatOCR"
+        style={{ width: 240, height: "auto", marginBottom: 24 }}
+      />
+      <p
+        style={{
+          margin: 0,
+          fontSize: "1rem",
+          color: "#bdbdbd",
+          letterSpacing: "0.18em",
+          textTransform: "uppercase",
+        }}
+      >
+        AI Document Processing Platform
       </p>
-      <div style={{ marginTop: "2rem" }}>
+      <div style={{ marginTop: "2.5rem" }}>
         <Link
           to="/new"
           style={{
             display: "inline-block",
-            padding: "12px 32px",
-            fontSize: "1rem",
-            fontWeight: 600,
-            color: "#fff",
-            background: "#1565c0",
-            borderRadius: 6,
+            padding: "14px 38px",
+            fontSize: "1.05rem",
+            fontWeight: 700,
+            color: "#0b0b0b",
+            background: "#FFC400",
+            borderRadius: 8,
             textDecoration: "none",
+            boxShadow: "0 8px 24px rgba(255, 196, 0, 0.25)",
           }}
         >
           开始新 OCR 任务
@@ -2243,7 +2273,7 @@ function HomePage() {
 
 const navLinkStyle: CSSProperties = {
   textDecoration: "none",
-  color: "#1565c0",
+  color: "#e5e5e5",
   fontWeight: 500,
   padding: "0.4rem 0.8rem",
   borderRadius: 6,
@@ -2253,9 +2283,9 @@ const headerStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
-  padding: "0.75rem 1.5rem",
-  borderBottom: "1px solid #e0e0e0",
-  background: "#fafafa",
+  padding: "0.6rem 1.5rem",
+  borderBottom: "1px solid #222222",
+  background: "#0e0e0e",
 }
 
 const navStyle: CSSProperties = {
@@ -2265,26 +2295,68 @@ const navStyle: CSSProperties = {
 
 export function App() {
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
-      }}
-    >
+      <div
+        style={{
+          minHeight: "100vh",
+          fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+          background: "#0a0a0a",
+          color: "#f0f0f0",
+        }}
+      >
       <header style={headerStyle}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <h1 style={{ margin: 0, fontSize: "1.25rem", color: "#333" }}>GreatOCR</h1>
+        <style>{`
+.gocr-nav-link{transition:background .15s,color .15s;}
+.gocr-nav-link:hover{background:#1f1f1f;color:#ffffff !important;}
+body{background:#0a0a0a;color:#f0f0f0;color-scheme:dark;margin:0;}
+select,input[type="text"],input[type="password"],input[type="file"],textarea{background:#1a1a1a;color:#f0f0f0;border:1px solid #2a2a2a;border-radius:6px;}
+input::placeholder{color:#808080;}
+input[type="checkbox"]{accent-color:#FFC400;width:16px;height:16px;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-track{background:#0a0a0a;}
+::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:5px;}
+`}</style>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <Link
+            to="/"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              textDecoration: "none",
+            }}
+          >
+            <img
+              src={greatocrIcon}
+              alt=""
+              style={{ width: 32, height: 32, display: "block" }}
+            />
+            <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+              <span
+                style={{
+                  fontSize: "1.25rem",
+                  fontWeight: 700,
+                  color: "#ffffff",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                GreatOCR
+              </span>
+              <span style={{ fontSize: "0.7rem", color: "#9a9a9a", letterSpacing: "0.03em" }}>
+                AI Document Processing Platform
+              </span>
+            </span>
+          </Link>
           <nav style={navStyle}>
-            <Link to="/" style={navLinkStyle}>
+            <Link to="/" style={navLinkStyle} className="gocr-nav-link">
               首页
             </Link>
-            <Link to="/tasks" style={navLinkStyle}>
+            <Link to="/tasks" style={navLinkStyle} className="gocr-nav-link">
               任务中心
             </Link>
-            <Link to="/new" style={navLinkStyle}>
+            <Link to="/new" style={navLinkStyle} className="gocr-nav-link">
               新建任务
             </Link>
-            <Link to="/settings" style={navLinkStyle}>
+            <Link to="/settings" style={navLinkStyle} className="gocr-nav-link">
               设置
             </Link>
           </nav>
